@@ -1,0 +1,49 @@
+# Talkscribe Configuration
+# This file can be edited via the web dashboard or directly.
+
+bot:
+  privacy_mode: true
+  admin_user_ids: []
+  authorized_users: "*"
+
+  # Default prompts (overridable per-user)
+  prompts:
+    summary: |
+      Summarize the following group chat messages concisely. 
+      Focus on key decisions, action items, and important information.
+      Format as bullet points.
+
+    reply: |
+      You are a helpful assistant in a Telegram group chat.
+      Reply naturally and conversationally.
+
+    transcription_context: |
+      The following text was transcribed from a voice message.
+      Please process it as if the user typed it directly.
+
+transcription:
+  engine: local  # local, openai, groq, custom
+  model: distil-medium.en
+  device: cpu    # cpu, cuda
+  compute_type: int8
+  beam_size: 5
+  vad_filter: true
+  language: null  # null = auto-detect
+
+llm:
+  base_url: http://localhost:8088/v1
+  api_key: ""
+  model: qwen3.5-9b
+  temperature: 0.7
+  max_tokens: 4096
+  stream: true
+
+web:
+  host: 0.0.0.0
+  port: 8180
+  username: admin
+  password: changeme
+
+history:
+  retention_days: 90
+  max_chats: 100

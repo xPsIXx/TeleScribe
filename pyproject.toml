@@ -1,0 +1,35 @@
+[project]
+name = "telescribe"
+version = "0.2.3"
+description = "Telegram bot with ASR transcription, group history, admin commands, and web dashboard"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot>=21.0",
+    "openai>=1.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "jinja2>=3.1.0",
+    "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "aiosqlite>=0.20.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "python-multipart>=0.0.9",
+    "faster-whisper>=1.1.0",
+    "ffmpeg-python>=0.2.0",
+    "soundfile>=0.12.0",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+moonshine = ["moonshine-voice>=0.1.0"]
+parakeet = ["sherpa-onnx>=1.10.0"]
+
+[project.scripts]
+telescribe = "telescribe.main:cli"
+telescribe-web = "telescribe.web.app:run"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"

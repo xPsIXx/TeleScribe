@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TeleScribe — Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        surface: '#1a1b2e', card: '#232541', accent: '#7c5cfc',
+                        'accent-hover': '#6b4be8', muted: '#9ca3af', border: '#2d2f4a',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+        body { background: #0f1023; }
+        .glass { background: rgba(35, 37, 65, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
+        .input-field { background: #1a1b2e; border: 1px solid #2d2f4a; color: #e5e7eb; border-radius: 0.5rem; padding: 0.625rem 0.875rem; width: 100%; outline: none; transition: border-color 0.2s; }
+        .input-field:focus { border-color: #7c5cfc; box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.15); }
+        .input-field:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-primary { background: #7c5cfc; color: white; padding: 0.625rem 1.25rem; border-radius: 0.5rem; font-weight: 500; transition: all 0.2s; border: none; cursor: pointer; }
+        .btn-primary:hover { background: #6b4be8; transform: translateY(-1px); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-success { background: #059669; }
+        .btn-success:hover { background: #047857; }
+        .btn-warning { background: #d97706; }
+        .btn-warning:hover { background: #b45309; }
+        .btn-danger { background: #dc2626; }
+        .btn-danger:hover { background: #b91c1c; }
+        .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 0.875rem 1.5rem; border-radius: 0.75rem; color: white; font-weight: 500; animation: slideUp 0.3s ease; z-index: 50; font-size: 0.875rem; }
+        .toast-success { background: #059669; }
+        .toast-error { background: #dc2626; }
+        .toast-info { background: #2563eb; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(1rem); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { animation: spin 1s linear infinite; }
+        .status-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; display: inline-block; }
+        .status-dot.online { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.4); }
+        .status-dot.offline { background: #ef4444; }
+        .model-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0.875rem; border-radius: 0.5rem; cursor: pointer; transition: all 0.15s; border: 1px solid transparent; }
+        .model-row:hover { background: rgba(124, 92, 252, 0.06); border-color: rgba(124, 92, 252, 0.15); }
+        .model-row.selected { background: rgba(124, 92, 252, 0.12); border-color: rgba(124, 92, 252, 0.3); }
+        .model-row input[type="radio"] { accent-color: #7c5cfc; }
+        .needs-restart { background: rgba(217, 119, 6, 0.15); border: 1px solid rgba(217, 119, 6, 0.3); border-radius: 0.5rem; padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.75rem; }
+        .engine-badge { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.65rem; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-weight: 500; }
+        .badge-cpu { background: rgba(59,130,246,0.15); color: #60a5fa; }
+        .badge-gpu { background: rgba(34,197,94,0.15); color: #4ade80; }
+        .badge-latency { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .badge-lang { background: rgba(168,85,247,0.15); color: #c084fc; }
+        .section-card { @apply glass rounded-xl p-5; }
+        .section-title { font-size: 0.75rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 1rem; }
+        label { font-size: 0.8125rem; font-weight: 500; color: #9ca3af; margin-bottom: 0.375rem; display: block; }
+        .range-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: #2d2f4a; outline: none; }
+        .range-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #7c5cfc; cursor: pointer; transition: transform 0.15s; }
+        .range-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+        .range-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #7c5cfc; cursor: pointer; border: none; }
+        .log-filter-btn { font-size: 0.65rem; padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-weight: 500; background: #1a1b2e; color: #6b7280; border: 1px solid #2d2f4a; cursor: pointer; transition: all 0.15s; }
+        .log-filter-btn:hover { border-color: #7c5cfc; color: #e5e7eb; }
+        .log-filter-btn.active { background: #7c5cfc; color: white; border-color: #7c5cfc; }
+        .log-line { display: flex; gap: 0.5rem; padding: 0.0625rem 0; }
+        .log-level { font-weight: 600; min-width: 4.5rem; flex-shrink: 0; }
+        .log-level.INFO { color: #22c55e; }
+        .log-level.WARN { color: #f59e0b; }
+        .log-level.ERROR { color: #ef4444; }
+        .log-level.DEBUG { color: #6b7280; }
+        .log-msg { color: #d1d5db; word-break: break-word; }
+        .log-time { color: #6b7280; min-width: 5rem; flex-shrink: 0; }
+    </style>
+</head>
+<body class="min-h-screen text-gray-200">
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-white flex items-center gap-3">
+                    <span class="w-8 h-8 bg-accent rounded-lg flex items-center justify-center text-sm font-bold">T</span>
+                    TeleScribe
+                </h1>
+                <p class="text-muted text-xs mt-1">Dashboard v{{ version }}</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="flex items-center gap-2 text-sm">
+                    <span class="status-dot online" id="statusDot"></span>
+                    <span id="statusText">Running</span>
+                </span>
+            </div>
+        </div>
+
+        <!-- Top Status Bar -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
+            <div class="glass rounded-xl p-3">
+                <div class="text-muted text-[10px] uppercase tracking-wider mb-0.5">Engine</div>
+                <div class="text-base font-semibold text-white truncate" id="engineDisplay">{{ config.transcription.engine }}</div>
+            </div>
+            <div class="glass rounded-xl p-3">
+                <div class="text-muted text-[10px] uppercase tracking-wider mb-0.5">Model</div>
+                <div class="text-base font-semibold text-white truncate" id="modelDisplay">{{ config.transcription.model }}</div>
+            </div>
+            <div class="glass rounded-xl p-3">
+                <div class="text-muted text-[10px] uppercase tracking-wider mb-0.5">Device</div>
+                <div class="text-base font-semibold text-white" id="deviceDisplay">{{ config.transcription.device }}</div>
+            </div>
+            <div class="glass rounded-xl p-3">
+                <div class="text-muted text-[10px] uppercase tracking-wider mb-0.5">LLM Model</div>
+                <div class="text-base font-semibold text-white truncate" id="llmDisplay">{{ config.llm.model }}</div>
+            </div>
+            <div class="glass rounded-xl p-3 col-span-2">
+                <div class="text-muted text-[10px] uppercase tracking-wider mb-0.5">LLM Endpoint</div>
+                <div class="text-base font-semibold text-white truncate text-sm" id="llmUrlDisplay">{{ config.llm.base_url }}</div>
+            </div>
+        </div>
+
+        <!-- ====== ASR SECTION ====== -->
+        <div class="section-card mb-6">
+            <h2 class="section-title flex items-center gap-2">
+                <span>🎙️</span> Speech Recognition Engine
+            </h2>
+
+            <!-- Engine Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6" id="engineCards">
+                <div class="engine-card" data-engine="local" onclick="selectEngine('local')">
+                    <div class="engine-name">faster-whisper</div>
+                    <div class="engine-sub">Local GPU/CPU</div>
+                    <div class="engine-badges">
+                        <span class="engine-badge badge-cpu">CPU</span>
+                        <span class="engine-badge badge-gpu">GPU</span>
+                    </div>
+                </div>
+                <div class="engine-card" data-engine="moonshine" onclick="selectEngine('moonshine')">
+                    <div class="engine-name">Moonshine</div>
+                    <div class="engine-sub">Edge-optimized</div>
+                    <div class="engine-badges">
+                        <span class="engine-badge badge-cpu">CPU</span>
+                        <span class="engine-badge badge-latency">~100ms</span>
+                        <span class="engine-badge badge-lang">8 langs</span>
+                    </div>
+                </div>
+                <div class="engine-card" data-engine="parakeet" onclick="selectEngine('parakeet')">
+                    <div class="engine-name">Parakeet</div>
+                    <div class="engine-sub">NVIDIA NeMo</div>
+                    <div class="engine-badges">
+                        <span class="engine-badge badge-cpu">CPU</span>
+                        <span class="engine-badge badge-latency">6.3% WER</span>
+                    </div>
+                </div>
+            </div>
+
+            <style>
+                .engine-card {
+                    background: rgba(26,27,46,0.6);
+                    border: 1px solid #2d2f4a;
+                    border-radius: 0.75rem;
+                    padding: 0.875rem;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    text-align: center;
+                }
+                .engine-card:hover { border-color: rgba(124,92,252,0.4); transform: translateY(-1px); }
+                .engine-card.active { border-color: #7c5cfc; box-shadow: 0 0 0 1px #7c5cfc, 0 4px 12px rgba(124,92,252,0.15); }
+                .engine-name { font-size: 0.8125rem; font-weight: 600; color: #e5e7eb; }
+                .engine-sub { font-size: 0.65rem; color: #6b7280; margin-top: 0.125rem; margin-bottom: 0.375rem; }
+                .engine-badges { display: flex; flex-wrap: wrap; gap: 0.25rem; justify-content: center; }
+            </style>
+
+            <!-- Engine-specific settings row -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Left: Device + Compute -->
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div id="deviceGroup">
+                            <label>Device</label>
+                            <select id="device" class="input-field">
+                                <option value="cpu">CPU</option>
+                                <option value="cuda">GPU (CUDA)</option>
+                            </select>
+                        </div>
+                        <div id="computeGroup">
+                            <label>Compute Type</label>
+                            <select id="computeType" class="input-field">
+                                <option value="int8">int8 (fast, low memory)</option>
+                                <option value="float16">float16 (balanced)</option>
+                                <option value="float32">float32 (accurate)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="languageGroup">
+                        <label>Language <span class="text-xs text-muted">— empty = auto-detect</span></label>
+                        <input id="language" class="input-field" value="{{ config.transcription.language or '' }}" placeholder="en, es, ar, fr, de...">
+                    </div>
+
+                    <!-- Moonshine-specific settings (hidden for other engines) -->
+                    <div id="moonshineSettings" class="hidden p-3 rounded-lg border border-purple-900/30 bg-purple-900/5">
+                        <div class="text-xs font-semibold text-purple-400 mb-2 flex items-center gap-1.5">
+                            <span>🌙</span> Moonshine Options
+                        </div>
+                        <label class="text-xs">Language model variant</label>
+                        <select id="moonshineArch" class="input-field text-sm">
+                            <option value="">Automatic (recommended)</option>
+                            <option value="0">Base (tiny)</option>
+                            <option value="1">Small</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Right: Model Selection -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="mb-0">Model</label>
+                        <span class="text-xs text-muted" id="modelNote"></span>
+                    </div>
+                    <div class="flex gap-2 items-start">
+                        <select id="modelSelect" class="input-field flex-1" onchange="onModelChange()">
+                            <option value="">— Select a model —</option>
+                        </select>
+                        <div class="flex flex-col gap-1 pt-0.5" id="modelActions">
+                            <button id="modelDownloadBtn" onclick="downloadCurrentModel()" class="text-xs px-2.5 py-1.5 rounded bg-accent text-white hover:bg-accent-hover transition hidden">⬇ Download</button>
+                            <button id="modelClearBtn" onclick="clearCurrentModel()" class="text-xs px-2.5 py-1.5 rounded bg-gray-700 text-muted hover:text-red-400 transition hidden">🗑️ Clear</button>
+                        </div>
+                    </div>
+                    <div class="mt-2 flex items-center gap-3 text-xs" id="modelStatus">
+                        <span id="modelStatusIcon" class="hidden"></span>
+                        <span id="modelStatusText" class="text-muted"></span>
+                        <span id="modelSizeText" class="text-muted"></span>
+                    </div>
+                    <div id="modelProgressBar" class="mt-2 hidden">
+                        <div class="flex items-center gap-2 text-xs text-yellow-400 mb-0.5">
+                            <svg class="w-3 h-3 spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                            <span id="modelProgressPct">0%</span>
+                        </div>
+                        <div class="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-accent rounded-full transition-all duration-300" id="modelProgressFill" style="width:0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== LLM SECTION ====== -->
+        <div class="section-card mb-6">
+            <h2 class="section-title flex items-center gap-2">
+                <span>🧠</span> LLM Configuration
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                    <label>API Base URL</label>
+                    <input id="llmUrl" class="input-field" value="{{ config.llm.base_url }}" placeholder="http://localhost:8088/v1">
+                </div>
+                <div>
+                    <label>Model</label>
+                    <input id="llmModel" class="input-field" value="{{ config.llm.model }}" placeholder="qwen3.5-9b">
+                </div>
+                <div>
+                    <label>Temperature <span id="tempVal" class="text-accent">{{ config.llm.temperature }}</span></label>
+                    <input type="range" id="llmTemp" class="range-slider mt-1" min="0" max="2" step="0.05" value="{{ config.llm.temperature }}" oninput="document.getElementById('tempVal').textContent=this.value">
+                </div>
+                <div>
+                    <label>Max Tokens</label>
+                    <input id="llmMaxTokens" type="number" class="input-field" value="{{ config.llm.max_tokens }}" min="64" max="32768" step="64">
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== PROMPTS SECTION ====== -->
+        <div class="section-card mb-6">
+            <h2 class="section-title flex items-center gap-2">
+                <span>✏️</span> Custom Prompts
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label>Summary Prompt</label>
+                    <textarea id="summaryPrompt" class="input-field h-28 font-mono text-sm">{{ config.bot.prompts.summary }}</textarea>
+                </div>
+                <div>
+                    <label>Reply Prompt</label>
+                    <textarea id="replyPrompt" class="input-field h-28 font-mono text-sm">{{ config.bot.prompts.reply }}</textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== AUTHORIZATION SECTION ====== -->
+        <div class="section-card mb-6">
+            <h2 class="section-title flex items-center gap-2">
+                <span>🔐</span> Authorization
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label>Authorized User IDs <span class="text-xs text-muted">— comma separated, leave empty to restrict all</span></label>
+                    <input id="authorizedUsers" class="input-field" value="{{ config.bot.authorized_users | join(', ') }}" placeholder="123456789, 987654321">
+                    <div class="text-xs text-muted mt-1">Only these users can use restricted functions below. Empty = no one authorized.</div>
+                </div>
+                <div>
+                    <label class="block mb-2">Restricted Functions</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="authSummarize" class="w-4 h-4 accent-accent" {% if config.bot.auth_required_summarize %}checked{% endif %}>
+                            <span class="text-sm font-medium">/summarize command</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="authReply" class="w-4 h-4 accent-accent" {% if config.bot.auth_required_reply %}checked{% endif %}>
+                            <span class="text-sm font-medium">/reply command</span>
+                        </label>
+                    </div>
+                    <div class="text-xs text-muted mt-2">Voice transcription is always available to everyone. Authorized users can use /summarize and /reply commands in the group.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== BEHAVIOR SECTION ====== -->
+        <div class="section-card mb-6">
+            <h2 class="section-title flex items-center gap-2">
+                <span>⚙️</span> Bot Behavior
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="privacy" class="w-4 h-4 accent-accent" {% if config.bot.privacy_mode %}checked{% endif %}>
+                    <span class="text-sm font-medium">Ephemeral privacy mode</span>
+                    <span class="text-xs text-muted ml-auto">Replies visible only to user</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="showFeedback" class="w-4 h-4 accent-accent" {% if config.bot.show_transcribing_feedback %}checked{% endif %}>
+                    <span class="text-sm font-medium">"🎙️ Transcribing..." message</span>
+                    <span class="text-xs text-muted ml-auto">Show progress feedback</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="showHeader" class="w-4 h-4 accent-accent" {% if config.bot.show_transcription_header %}checked{% endif %}>
+                    <span class="text-sm font-medium">"📝 Transcription:" header</span>
+                    <span class="text-xs text-muted ml-auto">Prefix transcription text</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- ====== HISTORY SECTION ====== -->
+        <div class="section-card mb-6">
+            <h2 class="section-title flex items-center gap-2">
+                <span>📚</span> Message History
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label>Retention (days)</label>
+                    <input id="retentionDays" type="number" class="input-field" value="{{ config.history.retention_days }}" min="1" max="365">
+                </div>
+                <div>
+                    <label>Reply age limit (days)</label>
+                    <input id="replyRetentionDays" type="number" class="input-field" value="{{ config.history.reply_retention_days }}" min="1" max="365">
+                </div>
+                <div>
+                    <label>Summarize age limit (days)</label>
+                    <input id="summarizeRetentionDays" type="number" class="input-field" value="{{ config.history.summarize_retention_days }}" min="1" max="365">
+                </div>
+                <div>
+                    <label>Max Chats Tracked</label>
+                    <input id="maxChats" type="number" class="input-field" value="{{ config.history.max_chats }}" min="1" max="1000">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="pruneHistory()" class="btn-warning text-sm px-4 py-2.5 rounded-lg font-medium w-full" id="pruneBtn">
+                        🗑️ Prune Old Messages
+                    </button>
+                </div>
+            </div>
+            <div class="mt-3 text-xs text-muted" id="historyStats"></div>
+        </div>
+
+        <!-- ====== LOGS SECTION ====== -->
+        <div class="section-card mb-6">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="section-title flex items-center gap-2 mb-0">
+                    <span>📋</span> Live Logs
+                </h2>
+                <div class="flex items-center gap-2">
+                    <button onclick="toggleLogAutoRefresh()" class="text-xs px-3 py-1.5 rounded-lg font-medium transition" id="logPauseBtn">
+                        ⏸️ Pause
+                    </button>
+                    <button onclick="clearLogs()" class="text-xs px-3 py-1.5 rounded-lg bg-gray-700/50 text-muted hover:text-white transition">🗑️ Clear</button>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 mb-3 flex-wrap">
+                <div class="flex gap-1">
+                    <button class="log-filter-btn active" data-level="" onclick="setLogLevel(this)">All</button>
+                    <button class="log-filter-btn" data-level="INFO" onclick="setLogLevel(this)">INFO</button>
+                    <button class="log-filter-btn" data-level="WARN" onclick="setLogLevel(this)">WARN</button>
+                    <button class="log-filter-btn" data-level="ERROR" onclick="setLogLevel(this)">ERROR</button>
+                    <button class="log-filter-btn" data-level="DEBUG" onclick="setLogLevel(this)">DEBUG</button>
+                </div>
+                <input id="logSearch" class="input-field flex-1 min-w-[120px] text-xs py-1.5" placeholder="🔍 Search logs..." oninput="onLogSearch()">
+                <span class="text-xs text-muted" id="logCount">0 lines</span>
+            </div>
+            <div id="logContainer" class="bg-black/40 rounded-lg p-3 h-80 overflow-y-auto font-mono text-xs leading-relaxed">
+                <div class="text-muted text-center py-8">Loading logs...</div>
+            </div>
+        </div>
+
+        <!-- ====== ACTIONS BAR ====== -->
+        <div class="flex items-center justify-between flex-wrap gap-3 bg-gray-900/50 rounded-xl p-4 mb-6 border border-gray-800">
+            <div class="flex items-center gap-4">
+                <span class="text-xs text-muted">Save triggers auto-reload (~1s)</span>
+                <button onclick="saveConfig()" class="btn-primary flex items-center gap-2 text-sm px-5 py-2.5" id="saveBtn">
+                    💾 Save &amp; Reload
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+        // ====== State ======
+        let modelData = null;
+        let currentModel = '{{ config.transcription.model }}';
+
+        // ====== Init ======
+        async function init() {
+            await loadModels();
+            // Select current engine card
+            const engine = document.getElementById('engineDisplay').textContent.trim();
+            selectEngine(engine);
+            loadHistoryStats();
+        }
+
+        // ====== Engine Selection ======
+        function selectEngine(engine) {
+            document.querySelectorAll('.engine-card').forEach(c => c.classList.remove('active'));
+            const card = document.querySelector(`.engine-card[data-engine="${engine}"]`);
+            if (card) card.classList.add('active');
+
+            const devices = (modelData && modelData.engine_devices[engine]) || [];
+            const deviceSel = document.getElementById('device');
+            const deviceGroup = document.getElementById('deviceGroup');
+            const computeGroup = document.getElementById('computeGroup');
+            const languageGroup = document.getElementById('languageGroup');
+            const modelNote = document.getElementById('modelNote');
+            const moonshineSettings = document.getElementById('moonshineSettings');
+
+            // Device handling
+            if (devices.length === 0) {
+                deviceGroup.style.display = 'none';
+                computeGroup.style.display = 'none';
+            } else if (devices.length === 1) {
+                deviceGroup.style.display = 'block';
+                deviceSel.innerHTML = `<option value="${devices[0]}" selected>${devices[0].toUpperCase()}</option>`;
+                deviceSel.disabled = true;
+                computeGroup.style.display = engine === 'local' ? 'block' : 'none';
+            } else {
+                deviceGroup.style.display = 'block';
+                deviceSel.disabled = false;
+                deviceSel.innerHTML = devices.map(d => `<option value="${d}">${d.toUpperCase()}</option>`).join('');
+                computeGroup.style.display = 'block';
+            }
+
+            // Language
+            languageGroup.style.display = engine === 'local' || engine === 'moonshine' ? 'block' : 'none';
+
+            // Moonshine-specific
+            moonshineSettings.style.display = engine === 'moonshine' ? 'block' : 'none';
+
+            // Model note
+            const remote = ['openai', 'groq', 'custom'];
+            modelNote.textContent = remote.includes(engine)
+                ? 'Uses API provider default'
+                : 'Select a model → click Download if needed';
+
+            renderModelDropdown();
+        }
+
+        // ====== Model Dropdown ======
+        async function loadModels() {
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+                modelData = data;
+                renderModelDropdown();
+            } catch (e) {
+                console.error('Failed to load models:', e);
+            }
+        }
+
+        function renderModelDropdown() {
+            if (!modelData) return;
+            const engine = document.querySelector('.engine-card.active')?.dataset.engine || 'local';
+            const models = (modelData.engine_models[engine] || []);
+            const sel = document.getElementById('modelSelect');
+            const remote = ['openai', 'groq', 'custom'];
+
+            if (models.length === 0 || remote.includes(engine)) {
+                sel.innerHTML = '<option value="">— No model selection needed —</option>';
+                sel.disabled = true;
+                updateModelStatus(null);
+                return;
+            }
+            sel.disabled = false;
+
+            // Preserve current selection if still valid
+            const currentVal = currentModel;
+            sel.innerHTML = '<option value="">— Select a model —</option>' +
+                models.map(m => `<option value="${m.id}" ${m.id === currentVal ? 'selected' : ''}>${m.id} — ${m.label}</option>`).join('');
+
+            // Update status for the selected model
+            if (currentVal) {
+                const model = models.find(m => m.id === currentVal);
+                updateModelStatus(model);
+            } else {
+                updateModelStatus(null);
+            }
+        }
+
+        function onModelChange() {
+            const sel = document.getElementById('modelSelect');
+            currentModel = sel.value;
+            if (currentModel && modelData) {
+                const engine = document.querySelector('.engine-card.active')?.dataset.engine || 'local';
+                const models = modelData.engine_models[engine] || [];
+                const model = models.find(m => m.id === currentModel);
+                updateModelStatus(model);
+            } else {
+                updateModelStatus(null);
+            }
+        }
+
+        function updateModelStatus(model) {
+            const icon = document.getElementById('modelStatusIcon');
+            const text = document.getElementById('modelStatusText');
+            const size = document.getElementById('modelSizeText');
+            const dlBtn = document.getElementById('modelDownloadBtn');
+            const clrBtn = document.getElementById('modelClearBtn');
+            const progressBar = document.getElementById('modelProgressBar');
+
+            // Hide everything first
+            icon.classList.add('hidden');
+            dlBtn.classList.add('hidden');
+            clrBtn.classList.add('hidden');
+            progressBar.classList.add('hidden');
+            text.textContent = '';
+            size.textContent = '';
+
+            if (!model) {
+                icon.textContent = '';
+                return;
+            }
+
+            if (model.status === 'downloading') {
+                icon.classList.remove('hidden');
+                icon.textContent = '⏳';
+                text.textContent = 'Downloading...';
+                progressBar.classList.remove('hidden');
+                document.getElementById('modelProgressPct').textContent = model.progress + '%';
+                document.getElementById('modelProgressFill').style.width = model.progress + '%';
+                return;
+            }
+
+            if (model.downloaded) {
+                icon.classList.remove('hidden');
+                if (model.valid) {
+                    icon.textContent = '✅';
+                    text.textContent = 'Valid';
+                    text.className = 'text-green-400';
+                } else {
+                    icon.textContent = '⚠️';
+                    text.textContent = 'Corrupt — clear and re-download';
+                    text.className = 'text-yellow-400';
+                }
+                size.textContent = model.size ? '(' + model.size + ')' : '';
+                clrBtn.classList.remove('hidden');
+                return;
+            }
+
+            // Not downloaded
+            icon.classList.remove('hidden');
+            icon.textContent = '❌';
+            text.textContent = 'Not downloaded';
+            text.className = 'text-muted';
+            dlBtn.classList.remove('hidden');
+        }
+
+        async function downloadCurrentModel() {
+            const engine = document.querySelector('.engine-card.active')?.dataset.engine || 'local';
+            if (!currentModel) return;
+            await downloadModel(currentModel, engine);
+        }
+
+        async function downloadModel(modelId, engine) {
+            try {
+                const res = await fetch('/api/download-model', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({model_id: modelId, engine: engine}),
+                });
+                const data = await res.json();
+                if (data.status === 'started') {
+                    showToast('⏳ Downloading model...', 'info');
+                    pollDownloadStatus(modelId);
+                } else {
+                    showToast('❌ ' + (data.message || 'Download failed'), 'error');
+                }
+            } catch (e) {
+                showToast('❌ ' + e.message, 'error');
+            }
+        }
+
+        async function clearCurrentModel() {
+            const engine = document.querySelector('.engine-card.active')?.dataset.engine || 'local';
+            if (!currentModel) return;
+            if (!confirm('Delete model files for ' + currentModel + '?')) return;
+
+            try {
+                const res = await fetch('/api/clear-model', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({model_id: currentModel, engine: engine}),
+                });
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    showToast('🗑️ Model files cleared (' + data.count + ' paths)', 'success');
+                    loadModels();
+                } else {
+                    showToast('❌ ' + (data.message || 'Clear failed'), 'error');
+                }
+            } catch (e) {
+                showToast('❌ ' + e.message, 'error');
+            }
+        }
+
+        function pollDownloadStatus(modelId) {
+            const interval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/download-status');
+                    const data = await res.json();
+                    const s = data.downloads[modelId];
+                    if (!s) { clearInterval(interval); return; }
+                    if (s.status === 'done') {
+                        clearInterval(interval);
+                        showToast('✅ Model downloaded!', 'success');
+                        loadModels();
+                    } else if (s.status === 'error') {
+                        clearInterval(interval);
+                        showToast('❌ Download failed: ' + (s.error || ''), 'error');
+                        loadModels();
+                    } else {
+                        // Update progress in real-time
+                        const model = modelData?.engine_models?.[document.querySelector('.engine-card.active')?.dataset.engine]?.find(m => m.id === modelId);
+                        if (model) {
+                            model.progress = s.progress;
+                            model.status = 'downloading';
+                            updateModelStatus(model);
+                        }
+                    }
+                } catch (e) { clearInterval(interval); }
+            }, 500);
+        }
+
+        // ====== Download ======
+        async function downloadModel(modelId, engine) {
+            try {
+                const res = await fetch('/api/download-model', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({model_id: modelId, engine: engine}),
+                });
+                const data = await res.json();
+                if (data.status === 'started') {
+                    showToast('⏳ Downloading model...', 'info');
+                    pollDownloadStatus(modelId);
+                } else {
+                    showToast('❌ ' + (data.message || 'Download failed'), 'error');
+                }
+            } catch (e) {
+                showToast('❌ ' + e.message, 'error');
+            }
+        }
+
+        function pollDownloadStatus(modelId) {
+            const interval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/download-status');
+                    const data = await res.json();
+                    const s = data.downloads[modelId];
+                    if (!s) { clearInterval(interval); return; }
+                    if (s.status === 'done') {
+                        clearInterval(interval);
+                        showToast('✅ Model downloaded!', 'success');
+                        loadModels();
+                    } else if (s.status === 'error') {
+                        clearInterval(interval);
+                        showToast('❌ Download failed: ' + (s.error || ''), 'error');
+                        loadModels();
+                    } else {
+                        // Update progress in real-time
+                        const engine = document.querySelector('.engine-card.active')?.dataset.engine || 'local';
+                        const model = modelData?.engine_models?.[engine]?.find(m => m.id === modelId);
+                        if (model) {
+                            model.progress = s.progress;
+                            model.status = 'downloading';
+                            updateModelStatus(model);
+                        }
+                    }
+                } catch (e) { clearInterval(interval); }
+            }, 500);
+        }
+
+        // ====== Save Config ======
+        async function saveConfig() {
+            const btn = document.getElementById('saveBtn');
+            btn.disabled = true; btn.textContent = '⏳ Saving...';
+
+            const data = {
+                engine: document.querySelector('.engine-card.active')?.dataset.engine || 'local',
+                model: currentModel,
+                device: document.getElementById('device').value,
+                compute_type: document.getElementById('computeType').value,
+                language: document.getElementById('language').value,
+                llm_url: document.getElementById('llmUrl').value,
+                llm_model: document.getElementById('llmModel').value,
+                llm_temp: parseFloat(document.getElementById('llmTemp').value),
+                llm_max_tokens: parseInt(document.getElementById('llmMaxTokens').value),
+                privacy_mode: document.getElementById('privacy').checked,
+                show_transcribing_feedback: document.getElementById('showFeedback').checked,
+                show_transcription_header: document.getElementById('showHeader').checked,
+                authorized_users: document.getElementById('authorizedUsers').value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
+                auth_required_summarize: document.getElementById('authSummarize').checked,
+                auth_required_reply: document.getElementById('authReply').checked,
+                summary_prompt: document.getElementById('summaryPrompt').value,
+                reply_prompt: document.getElementById('replyPrompt').value,
+                retention_days: parseInt(document.getElementById('retentionDays').value),
+                reply_retention_days: parseInt(document.getElementById('replyRetentionDays').value),
+                summarize_retention_days: parseInt(document.getElementById('summarizeRetentionDays').value),
+                max_chats: parseInt(document.getElementById('maxChats').value),
+            };
+
+            try {
+                const res = await fetch('/api/config', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data),
+                });
+                if (!res.ok) throw new Error('Save failed');
+                showToast('✅ Configuration saved', 'success');
+
+                // Update status bar
+                document.getElementById('engineDisplay').textContent = data.engine;
+                document.getElementById('modelDisplay').textContent = data.model;
+                document.getElementById('deviceDisplay').textContent = data.device;
+                document.getElementById('llmDisplay').textContent = data.llm_model;
+                document.getElementById('llmUrlDisplay').textContent = data.llm_url;
+
+                showToast('✅ Config saved — bot reloading...', 'success');
+            } catch (e) {
+                showToast('❌ ' + e.message, 'error');
+            } finally {
+                btn.disabled = false; btn.textContent = '💾 Save & Reload';
+            }
+        }
+
+        // ====== History Prune ======
+        async function pruneHistory() {
+            if (!confirm('Delete old messages beyond retention period?')) return;
+            const btn = document.getElementById('pruneBtn');
+            btn.disabled = true; btn.textContent = '⏳ Pruning...';
+            try {
+                const res = await fetch('/api/history/prune', {method: 'POST'});
+                const data = await res.json();
+                showToast('✅ Pruned ' + (data.deleted || 0) + ' messages', 'success');
+                loadHistoryStats();
+            } catch (e) {
+                showToast('❌ ' + e.message, 'error');
+            } finally {
+                btn.disabled = false; btn.textContent = '🗑️ Prune Old Messages';
+            }
+        }
+
+        async function loadHistoryStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                document.getElementById('historyStats').textContent =
+                    `📦 ${(data.db_size / 1024).toFixed(1)} KB  ·  📝 ${data.message_count || '?'} messages`;
+            } catch (e) {}
+        }
+
+        // ====== Toast ======
+        function showToast(msg, type) {
+            const t = document.createElement('div');
+            t.className = `toast toast-${type}`;
+            t.textContent = msg;
+            document.getElementById('toast').appendChild(t);
+            setTimeout(() => t.remove(), 4000);
+        }
+
+        // ====== Log Viewer ======
+        let logAutoRefresh = true;
+        let logTimer = null;
+        let logLevel = '';
+        let logSearch = '';
+
+        function setLogLevel(btn) {
+            document.querySelectorAll('.log-filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            logLevel = btn.dataset.level;
+            fetchLogs();
+        }
+
+        function onLogSearch() {
+            logSearch = document.getElementById('logSearch').value;
+            fetchLogs();
+        }
+
+        function toggleLogAutoRefresh() {
+            logAutoRefresh = !logAutoRefresh;
+            const btn = document.getElementById('logPauseBtn');
+            if (logAutoRefresh) {
+                btn.textContent = '⏸️ Pause';
+                startLogPolling();
+            } else {
+                btn.textContent = '▶️ Resume';
+                if (logTimer) { clearTimeout(logTimer); logTimer = null; }
+            }
+        }
+
+        function startLogPolling() {
+            if (!logAutoRefresh) return;
+            if (logTimer) clearTimeout(logTimer);
+            logTimer = setTimeout(() => {
+                fetchLogs();
+                startLogPolling();
+            }, 2000);
+        }
+
+        function clearLogs() {
+            document.getElementById('logContainer').innerHTML = '<div class="text-muted text-center py-4">Logs cleared. Waiting for new entries...</div>';
+        }
+
+        async function fetchLogs() {
+            try {
+                const params = new URLSearchParams({offset: '0', limit: '200', level: logLevel, search: logSearch});
+                const res = await fetch('/api/logs?' + params.toString());
+                const data = await res.json();
+                const container = document.getElementById('logContainer');
+                const count = document.getElementById('logCount');
+
+                if (!data.lines || data.lines.length === 0) {
+                    container.innerHTML = '<div class="text-muted text-center py-4">No log entries found.</div>';
+                    count.textContent = '0 lines';
+                    return;
+                }
+
+                count.textContent = data.total + ' lines';
+
+                container.innerHTML = data.lines.map(line => {
+                    // Parse: "2026-08-27 15:24:35 - telescribe.web - INFO - message"
+                    const match = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+-\s+(\S+)\s+-\s+(\S+)\s+-\s+(.*)$/);
+                    if (match) {
+                        const time = match[1];
+                        const level = match[3];
+                        const msg = match[4];
+                        const levelClass = ['INFO','WARN','ERROR','DEBUG'].includes(level) ? level : 'INFO';
+                        return `<div class="log-line"><span class="log-time">${time}</span><span class="log-level ${levelClass}">${level}</span><span class="log-msg">${escapeHtml(msg)}</span></div>`;
+                    }
+                    return `<div class="log-line"><span class="log-msg">${escapeHtml(line)}</span></div>`;
+                }).join('');
+
+                // Auto-scroll to top
+                container.scrollTop = 0;
+            } catch (e) {
+                // Silently fail on first load if file doesn't exist yet
+            }
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        // ====== Start ======
+        init();
+        fetchLogs();
+        startLogPolling();
+    </script>
+</body>
+</html>

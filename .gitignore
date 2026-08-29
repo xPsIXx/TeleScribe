@@ -1,0 +1,23 @@
+# Byte-compiled
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.venv/
+venv/
+
+# Data
+data/telescribe.db
+data/*.db
+
+# IDE
+.vscode/
+.idea/
+
+# Egg-info
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
