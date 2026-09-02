@@ -287,11 +287,12 @@ class ConfigUpdate(BaseModel):
     model: str
     device: str
     compute_type: str
+    vad_filter: bool
+    language: str
     llm_url: str
     llm_model: str
     llm_temp: float
     llm_max_tokens: int
-    language: str
     privacy_mode: bool
     show_transcribing_feedback: bool
     show_transcription_header: bool
@@ -314,6 +315,7 @@ async def update_config(update: ConfigUpdate):
     cfg.transcription.model = update.model
     cfg.transcription.device = update.device  # type: ignore
     cfg.transcription.compute_type = update.compute_type
+    cfg.transcription.vad_filter = update.vad_filter
     cfg.transcription.language = update.language or None
     cfg.llm.base_url = update.llm_url
     cfg.llm.model = update.llm_model
@@ -352,6 +354,7 @@ async def get_config_api():
         "model": cfg.transcription.model,
         "device": cfg.transcription.device,
         "compute_type": cfg.transcription.compute_type,
+        "vad_filter": cfg.transcription.vad_filter,
         "language": cfg.transcription.language or "",
         "llm_url": cfg.llm.base_url,
         "llm_model": cfg.llm.model,

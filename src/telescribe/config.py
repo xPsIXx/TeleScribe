@@ -29,7 +29,7 @@ class TranscriptionConfig(BaseSettings):
     device: Literal["cpu", "cuda"] = "cpu"
     compute_type: str = "int8"
     beam_size: int = 5
-    vad_filter: bool = True
+    vad_filter: bool = False
     language: Optional[str] = None
 
 

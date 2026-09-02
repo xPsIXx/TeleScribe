@@ -335,6 +335,11 @@
                     <span class="text-sm font-medium">"📝 Transcription:" header</span>
                     <span class="text-xs text-muted ml-auto">Prefix transcription text</span>
                 </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="vadFilter" class="w-4 h-4 accent-accent" {% if config.transcription.vad_filter %}checked{% endif %}>
+                    <span class="text-sm font-medium">VAD filter</span>
+                    <span class="text-xs text-muted ml-auto">Filter silence before transcribing</span>
+                </label>
             </div>
         </div>
 
@@ -722,6 +727,7 @@
                 privacy_mode: document.getElementById('privacy').checked,
                 show_transcribing_feedback: document.getElementById('showFeedback').checked,
                 show_transcription_header: document.getElementById('showHeader').checked,
+                vad_filter: document.getElementById('vadFilter').checked,
                 authorized_users: document.getElementById('authorizedUsers').value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
                 auth_required_summarize: document.getElementById('authSummarize').checked,
                 auth_required_reply: document.getElementById('authReply').checked,
