@@ -29,7 +29,18 @@ class TranscriptionConfig(BaseSettings):
     device: Literal["cpu", "cuda"] = "cpu"
     compute_type: str = "int8"
     beam_size: int = 5
+    temperature: float = 0.0
+    best_of: int = 5
+    patience: float = 1.0
+    length_penalty: float = 1.0
+    repetition_penalty: float = 1.0
+    no_repeat_ngram_size: int = 0
+    suppress_blank: bool = True
+    condition_on_previous_text: bool = True
     vad_filter: bool = False
+    no_speech_threshold: Optional[float] = None
+    log_prob_threshold: Optional[float] = None
+    compression_ratio_threshold: Optional[float] = None
     language: Optional[str] = None
 
 
@@ -189,7 +200,18 @@ class AppConfig(BaseSettings):
                 "device": self.transcription.device,
                 "compute_type": self.transcription.compute_type,
                 "beam_size": self.transcription.beam_size,
+                "temperature": self.transcription.temperature,
+                "best_of": self.transcription.best_of,
+                "patience": self.transcription.patience,
+                "length_penalty": self.transcription.length_penalty,
+                "repetition_penalty": self.transcription.repetition_penalty,
+                "no_repeat_ngram_size": self.transcription.no_repeat_ngram_size,
+                "suppress_blank": self.transcription.suppress_blank,
+                "condition_on_previous_text": self.transcription.condition_on_previous_text,
                 "vad_filter": self.transcription.vad_filter,
+                "no_speech_threshold": self.transcription.no_speech_threshold,
+                "log_prob_threshold": self.transcription.log_prob_threshold,
+                "compression_ratio_threshold": self.transcription.compression_ratio_threshold,
                 "language": self.transcription.language,
             },
             "llm": {

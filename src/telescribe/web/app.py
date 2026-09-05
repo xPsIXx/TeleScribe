@@ -287,7 +287,19 @@ class ConfigUpdate(BaseModel):
     model: str
     device: str
     compute_type: str
+    beam_size: int = 5
+    temperature: float = 0.0
+    best_of: int = 5
+    patience: float = 1.0
+    length_penalty: float = 1.0
+    repetition_penalty: float = 1.0
+    no_repeat_ngram_size: int = 0
+    suppress_blank: bool = True
+    condition_on_previous_text: bool = True
     vad_filter: bool
+    no_speech_threshold: float | None = None
+    log_prob_threshold: float | None = None
+    compression_ratio_threshold: float | None = None
     language: str
     llm_url: str
     llm_model: str
@@ -315,7 +327,19 @@ async def update_config(update: ConfigUpdate):
     cfg.transcription.model = update.model
     cfg.transcription.device = update.device  # type: ignore
     cfg.transcription.compute_type = update.compute_type
+    cfg.transcription.beam_size = update.beam_size
+    cfg.transcription.temperature = update.temperature
+    cfg.transcription.best_of = update.best_of
+    cfg.transcription.patience = update.patience
+    cfg.transcription.length_penalty = update.length_penalty
+    cfg.transcription.repetition_penalty = update.repetition_penalty
+    cfg.transcription.no_repeat_ngram_size = update.no_repeat_ngram_size
+    cfg.transcription.suppress_blank = update.suppress_blank
+    cfg.transcription.condition_on_previous_text = update.condition_on_previous_text
     cfg.transcription.vad_filter = update.vad_filter
+    cfg.transcription.no_speech_threshold = update.no_speech_threshold
+    cfg.transcription.log_prob_threshold = update.log_prob_threshold
+    cfg.transcription.compression_ratio_threshold = update.compression_ratio_threshold
     cfg.transcription.language = update.language or None
     cfg.llm.base_url = update.llm_url
     cfg.llm.model = update.llm_model
@@ -354,7 +378,19 @@ async def get_config_api():
         "model": cfg.transcription.model,
         "device": cfg.transcription.device,
         "compute_type": cfg.transcription.compute_type,
+        "beam_size": cfg.transcription.beam_size,
+        "temperature": cfg.transcription.temperature,
+        "best_of": cfg.transcription.best_of,
+        "patience": cfg.transcription.patience,
+        "length_penalty": cfg.transcription.length_penalty,
+        "repetition_penalty": cfg.transcription.repetition_penalty,
+        "no_repeat_ngram_size": cfg.transcription.no_repeat_ngram_size,
+        "suppress_blank": cfg.transcription.suppress_blank,
+        "condition_on_previous_text": cfg.transcription.condition_on_previous_text,
         "vad_filter": cfg.transcription.vad_filter,
+        "no_speech_threshold": cfg.transcription.no_speech_threshold,
+        "log_prob_threshold": cfg.transcription.log_prob_threshold,
+        "compression_ratio_threshold": cfg.transcription.compression_ratio_threshold,
         "language": cfg.transcription.language or "",
         "llm_url": cfg.llm.base_url,
         "llm_model": cfg.llm.model,

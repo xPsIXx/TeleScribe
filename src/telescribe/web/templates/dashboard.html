@@ -177,7 +177,7 @@
                     <div class="grid grid-cols-2 gap-3">
                         <div id="deviceGroup">
                             <label>Device</label>
-                            <select id="device" class="input-field">
+                            <select id="device" class="input-field" onchange="updateComputeOptions(this.value)">
                                 <option value="cpu">CPU</option>
                                 <option value="cuda">GPU (CUDA)</option>
                             </select>
@@ -189,6 +189,11 @@
                                 <option value="float16">float16 (balanced)</option>
                                 <option value="float32">float32 (accurate)</option>
                             </select>
+                        </div>
+                        <div id="beamGroup">
+                            <label>Beam Size</label>
+                            <input id="beamSize" type="number" min="1" max="20" step="1" class="input-field" value="{{ config.transcription.beam_size or 5 }}">
+                            <span class="text-xs text-muted">Higher = better accuracy, slower</span>
                         </div>
                     </div>
 
@@ -208,6 +213,83 @@
                             <option value="0">Base (tiny)</option>
                             <option value="1">Small</option>
                         </select>
+                    </div>
+
+                    <!-- Advanced Decoding Settings (only for local engine) -->
+                    <div id="advancedSettings" class="hidden">
+                        <details class="p-3 rounded-lg border border-gray-700/50 bg-gray-800/10">
+                            <summary class="text-xs font-semibold text-accent cursor-pointer select-none">⚙️ Advanced Decoding Settings</summary>
+                            <div class="mt-3 space-y-3">
+                                <!-- Decoding params row 1 -->
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label>Temperature</label>
+                                        <input id="temperature" type="number" min="0" max="1.0" step="0.1" class="input-field" value="{{ config.transcription.temperature or 0 }}">
+                                        <span class="text-xs text-muted">0 = greedy, higher = more varied</span>
+                                    </div>
+                                    <div>
+                                        <label>Best Of</label>
+                                        <input id="bestOf" type="number" min="1" max="20" step="1" class="input-field" value="{{ config.transcription.best_of or 5 }}">
+                                        <span class="text-xs text-muted">Candidates at non-zero temperature</span>
+                                    </div>
+                                </div>
+                                <!-- Decoding params row 2 -->
+                                <div class="grid grid-cols-3 gap-3">
+                                    <div>
+                                        <label>Patience</label>
+                                        <input id="patience" type="number" min="0.5" max="5.0" step="0.1" class="input-field" value="{{ config.transcription.patience or 1.0 }}">
+                                    </div>
+                                    <div>
+                                        <label>Length Penalty</label>
+                                        <input id="lengthPenalty" type="number" min="0.5" max="2.0" step="0.1" class="input-field" value="{{ config.transcription.length_penalty or 1.0 }}">
+                                    </div>
+                                    <div>
+                                        <label>Repetition Penalty</label>
+                                        <input id="repetitionPenalty" type="number" min="1.0" max="2.0" step="0.1" class="input-field" value="{{ config.transcription.repetition_penalty or 1.0 }}">
+                                        <span class="text-xs text-muted">>1 = penalize repeats</span>
+                                    </div>
+                                </div>
+                                <!-- Decoding params row 3 -->
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label>No Repeat Ngram Size</label>
+                                        <input id="noRepeatNgram" type="number" min="0" max="10" step="1" class="input-field" value="{{ config.transcription.no_repeat_ngram_size or 0 }}">
+                                        <span class="text-xs text-muted">0 = disabled</span>
+                                    </div>
+                                    <div class="flex items-end gap-4 pb-2">
+                                        <div class="flex items-center gap-2">
+                                            <input id="suppressBlank" type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-surface text-accent" {{ 'checked' if config.transcription.suppress_blank else '' }}>
+                                            <label class="mb-0 cursor-pointer">Suppress Blank</label>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <input id="conditionOnPrev" type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-surface text-accent" {{ 'checked' if config.transcription.condition_on_previous_text else '' }}>
+                                            <label class="mb-0 cursor-pointer">Context Across Segs</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Divider -->
+                                <div class="border-t border-gray-700/50 pt-3">
+                                    <div class="text-xs font-semibold text-amber-400 mb-2">🔇 Segment Filtering Thresholds</div>
+                                    <div class="text-xs text-muted mb-2">Set to empty to disable filtering (recommended). When set, segments exceeding the threshold are skipped.</div>
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <div>
+                                            <label>No Speech Threshold</label>
+                                            <input id="noSpeechThreshold" type="text" class="input-field" value="{{ config.transcription.no_speech_threshold if config.transcription.no_speech_threshold is not none else '' }}" placeholder="empty = disabled">
+                                            <span class="text-xs text-muted">0.0–1.0</span>
+                                        </div>
+                                        <div>
+                                            <label>Log Prob Threshold</label>
+                                            <input id="logProbThreshold" type="text" class="input-field" value="{{ config.transcription.log_prob_threshold if config.transcription.log_prob_threshold is not none else '' }}" placeholder="empty = disabled">
+                                        </div>
+                                        <div>
+                                            <label>Compression Ratio Threshold</label>
+                                            <input id="compressionRatioThreshold" type="text" class="input-field" value="{{ config.transcription.compression_ratio_threshold if config.transcription.compression_ratio_threshold is not none else '' }}" placeholder="empty = disabled">
+                                            <span class="text-xs text-muted">Higher = skip repetitive</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                 </div>
 
@@ -440,6 +522,8 @@
             const deviceSel = document.getElementById('device');
             const deviceGroup = document.getElementById('deviceGroup');
             const computeGroup = document.getElementById('computeGroup');
+            const beamGroup = document.getElementById('beamGroup');
+            const advancedSettings = document.getElementById('advancedSettings');
             const languageGroup = document.getElementById('languageGroup');
             const modelNote = document.getElementById('modelNote');
             const moonshineSettings = document.getElementById('moonshineSettings');
@@ -448,16 +532,24 @@
             if (devices.length === 0) {
                 deviceGroup.style.display = 'none';
                 computeGroup.style.display = 'none';
+                beamGroup.style.display = 'none';
+                advancedSettings.style.display = 'none';
             } else if (devices.length === 1) {
                 deviceGroup.style.display = 'block';
                 deviceSel.innerHTML = `<option value="${devices[0]}" selected>${devices[0].toUpperCase()}</option>`;
                 deviceSel.disabled = true;
                 computeGroup.style.display = engine === 'local' ? 'block' : 'none';
+                beamGroup.style.display = engine === 'local' ? 'block' : 'none';
+                advancedSettings.style.display = engine === 'local' ? 'block' : 'none';
+                updateComputeOptions(devices[0]);
             } else {
                 deviceGroup.style.display = 'block';
                 deviceSel.disabled = false;
                 deviceSel.innerHTML = devices.map(d => `<option value="${d}">${d.toUpperCase()}</option>`).join('');
                 computeGroup.style.display = 'block';
+                beamGroup.style.display = engine === 'local' ? 'block' : 'none';
+                advancedSettings.style.display = engine === 'local' ? 'block' : 'none';
+                updateComputeOptions(deviceSel.value);
             }
 
             // Language
@@ -473,6 +565,30 @@
                 : 'Select a model → click Download if needed';
 
             renderModelDropdown();
+        }
+
+        // ====== Compute Type Filtering ======
+        function updateComputeOptions(device) {
+            const sel = document.getElementById('computeType');
+            const current = sel.value;
+            const cpuOptions = [
+                {value: 'int8', label: 'int8 (fast, low memory)'},
+                {value: 'float32', label: 'float32 (accurate)'},
+                {value: 'int8_float16', label: 'int8_float16 (mixed)'},
+            ];
+            const cudaOptions = [
+                {value: 'int8', label: 'int8 (fast, low memory)'},
+                {value: 'float16', label: 'float16 (balanced)'},
+                {value: 'float32', label: 'float32 (accurate)'},
+            ];
+            const options = device === 'cuda' ? cudaOptions : cpuOptions;
+            sel.innerHTML = options.map(o =>
+                `<option value="${o.value}" ${o.value === current ? 'selected' : ''}>${o.label}</option>`
+            ).join('');
+            // If current selection is no longer valid, default to int8
+            if (!options.find(o => o.value === current)) {
+                sel.value = 'int8';
+            }
         }
 
         // ====== Model Dropdown ======
@@ -719,6 +835,15 @@
                 model: currentModel,
                 device: document.getElementById('device').value,
                 compute_type: document.getElementById('computeType').value,
+                beam_size: parseInt(document.getElementById('beamSize').value) || 5,
+                temperature: parseFloat(document.getElementById('temperature').value) || 0,
+                best_of: parseInt(document.getElementById('bestOf').value) || 5,
+                patience: parseFloat(document.getElementById('patience').value) || 1.0,
+                length_penalty: parseFloat(document.getElementById('lengthPenalty').value) || 1.0,
+                repetition_penalty: parseFloat(document.getElementById('repetitionPenalty').value) || 1.0,
+                no_repeat_ngram_size: parseInt(document.getElementById('noRepeatNgram').value) || 0,
+                suppress_blank: document.getElementById('suppressBlank').checked,
+                condition_on_previous_text: document.getElementById('conditionOnPrev').checked,
                 language: document.getElementById('language').value,
                 llm_url: document.getElementById('llmUrl').value,
                 llm_model: document.getElementById('llmModel').value,
@@ -728,6 +853,9 @@
                 show_transcribing_feedback: document.getElementById('showFeedback').checked,
                 show_transcription_header: document.getElementById('showHeader').checked,
                 vad_filter: document.getElementById('vadFilter').checked,
+                no_speech_threshold: parseFloat(document.getElementById('noSpeechThreshold').value) || null,
+                log_prob_threshold: parseFloat(document.getElementById('logProbThreshold').value) || null,
+                compression_ratio_threshold: parseFloat(document.getElementById('compressionRatioThreshold').value) || null,
                 authorized_users: document.getElementById('authorizedUsers').value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
                 auth_required_summarize: document.getElementById('authSummarize').checked,
                 auth_required_reply: document.getElementById('authReply').checked,

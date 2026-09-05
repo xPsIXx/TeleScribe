@@ -52,16 +52,26 @@ class FasterWhisperTranscriber(BaseTranscriber):
         if self._model is None:
             from faster_whisper import WhisperModel
 
+            device = self.config.transcription.device
+            compute_type = self.config.transcription.compute_type
+
+            # float16 is not supported on CPU — fall back to int8
+            if device == "cpu" and compute_type == "float16":
+                logger.warning(
+                    "float16 compute type not supported on CPU, falling back to int8"
+                )
+                compute_type = "int8"
+
             logger.info(
                 "Loading faster-whisper model: %s (device=%s, compute=%s)",
                 self.config.transcription.model,
-                self.config.transcription.device,
-                self.config.transcription.compute_type,
+                device,
+                compute_type,
             )
             self._model = WhisperModel(
                 self.config.transcription.model,
-                device=self.config.transcription.device,
-                compute_type=self.config.transcription.compute_type,
+                device=device,
+                compute_type=compute_type,
             )
         return self._model
 
@@ -77,7 +87,18 @@ class FasterWhisperTranscriber(BaseTranscriber):
             segments, info = model.transcribe(
                 tmp_path,
                 beam_size=self.config.transcription.beam_size,
+                best_of=self.config.transcription.best_of,
+                patience=self.config.transcription.patience,
+                length_penalty=self.config.transcription.length_penalty,
+                repetition_penalty=self.config.transcription.repetition_penalty,
+                no_repeat_ngram_size=self.config.transcription.no_repeat_ngram_size,
+                temperature=self.config.transcription.temperature,
+                suppress_blank=self.config.transcription.suppress_blank,
+                condition_on_previous_text=self.config.transcription.condition_on_previous_text,
                 vad_filter=self.config.transcription.vad_filter,
+                no_speech_threshold=self.config.transcription.no_speech_threshold,
+                log_prob_threshold=self.config.transcription.log_prob_threshold,
+                compression_ratio_threshold=self.config.transcription.compression_ratio_threshold,
                 language=self.config.transcription.language,
             )
 
