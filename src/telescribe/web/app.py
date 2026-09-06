@@ -300,6 +300,7 @@ class ConfigUpdate(BaseModel):
     no_speech_threshold: float | None = None
     log_prob_threshold: float | None = None
     compression_ratio_threshold: float | None = None
+    initial_prompt: str = ""
     language: str
     llm_url: str
     llm_model: str
@@ -340,6 +341,7 @@ async def update_config(update: ConfigUpdate):
     cfg.transcription.no_speech_threshold = update.no_speech_threshold
     cfg.transcription.log_prob_threshold = update.log_prob_threshold
     cfg.transcription.compression_ratio_threshold = update.compression_ratio_threshold
+    cfg.transcription.initial_prompt = update.initial_prompt or None
     cfg.transcription.language = update.language or None
     cfg.llm.base_url = update.llm_url
     cfg.llm.model = update.llm_model
@@ -391,6 +393,7 @@ async def get_config_api():
         "no_speech_threshold": cfg.transcription.no_speech_threshold,
         "log_prob_threshold": cfg.transcription.log_prob_threshold,
         "compression_ratio_threshold": cfg.transcription.compression_ratio_threshold,
+        "initial_prompt": cfg.transcription.initial_prompt or "",
         "language": cfg.transcription.language or "",
         "llm_url": cfg.llm.base_url,
         "llm_model": cfg.llm.model,

@@ -202,6 +202,13 @@
                         <input id="language" class="input-field" value="{{ config.transcription.language or '' }}" placeholder="en, es, ar, fr, de...">
                     </div>
 
+                    <!-- Initial Prompt (visible for local engine only) -->
+                    <div id="initialPromptGroup" class="hidden">
+                        <label>Initial Prompt <span class="text-xs text-muted">— bias transcription toward specific words/phrases</span></label>
+                        <textarea id="initialPrompt" class="input-field" rows="2" placeholder="e.g. model names, jargon, proper nouns..." style="resize: vertical;">{{ config.transcription.initial_prompt or '' }}</textarea>
+                        <span class="text-xs text-muted">Helps fix recurring transcription mistakes. Leave empty to disable.</span>
+                    </div>
+
                     <!-- Moonshine-specific settings (hidden for other engines) -->
                     <div id="moonshineSettings" class="hidden p-3 rounded-lg border border-purple-900/30 bg-purple-900/5">
                         <div class="text-xs font-semibold text-purple-400 mb-2 flex items-center gap-1.5">
@@ -523,6 +530,7 @@
             const deviceGroup = document.getElementById('deviceGroup');
             const computeGroup = document.getElementById('computeGroup');
             const beamGroup = document.getElementById('beamGroup');
+            const initialPromptGroup = document.getElementById('initialPromptGroup');
             const advancedSettings = document.getElementById('advancedSettings');
             const languageGroup = document.getElementById('languageGroup');
             const modelNote = document.getElementById('modelNote');
@@ -534,6 +542,7 @@
                 computeGroup.style.display = 'none';
                 beamGroup.style.display = 'none';
                 advancedSettings.style.display = 'none';
+                initialPromptGroup.style.display = 'none';
             } else if (devices.length === 1) {
                 deviceGroup.style.display = 'block';
                 deviceSel.innerHTML = `<option value="${devices[0]}" selected>${devices[0].toUpperCase()}</option>`;
@@ -541,6 +550,7 @@
                 computeGroup.style.display = engine === 'local' ? 'block' : 'none';
                 beamGroup.style.display = engine === 'local' ? 'block' : 'none';
                 advancedSettings.style.display = engine === 'local' ? 'block' : 'none';
+                initialPromptGroup.style.display = engine === 'local' ? 'block' : 'none';
                 updateComputeOptions(devices[0]);
             } else {
                 deviceGroup.style.display = 'block';
@@ -549,6 +559,7 @@
                 computeGroup.style.display = 'block';
                 beamGroup.style.display = engine === 'local' ? 'block' : 'none';
                 advancedSettings.style.display = engine === 'local' ? 'block' : 'none';
+                initialPromptGroup.style.display = engine === 'local' ? 'block' : 'none';
                 updateComputeOptions(deviceSel.value);
             }
 
@@ -856,6 +867,7 @@
                 no_speech_threshold: parseFloat(document.getElementById('noSpeechThreshold').value) || null,
                 log_prob_threshold: parseFloat(document.getElementById('logProbThreshold').value) || null,
                 compression_ratio_threshold: parseFloat(document.getElementById('compressionRatioThreshold').value) || null,
+                initial_prompt: document.getElementById('initialPrompt').value,
                 authorized_users: document.getElementById('authorizedUsers').value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
                 auth_required_summarize: document.getElementById('authSummarize').checked,
                 auth_required_reply: document.getElementById('authReply').checked,

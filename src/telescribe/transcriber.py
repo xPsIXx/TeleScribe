@@ -99,6 +99,7 @@ class FasterWhisperTranscriber(BaseTranscriber):
                 no_speech_threshold=self.config.transcription.no_speech_threshold,
                 log_prob_threshold=self.config.transcription.log_prob_threshold,
                 compression_ratio_threshold=self.config.transcription.compression_ratio_threshold,
+                initial_prompt=self.config.transcription.initial_prompt,
                 language=self.config.transcription.language,
             )
 

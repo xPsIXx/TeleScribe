@@ -41,6 +41,7 @@ class TranscriptionConfig(BaseSettings):
     no_speech_threshold: Optional[float] = None
     log_prob_threshold: Optional[float] = None
     compression_ratio_threshold: Optional[float] = None
+    initial_prompt: Optional[str] = None
     language: Optional[str] = None
 
 
@@ -212,6 +213,7 @@ class AppConfig(BaseSettings):
                 "no_speech_threshold": self.transcription.no_speech_threshold,
                 "log_prob_threshold": self.transcription.log_prob_threshold,
                 "compression_ratio_threshold": self.transcription.compression_ratio_threshold,
+                "initial_prompt": self.transcription.initial_prompt,
                 "language": self.transcription.language,
             },
             "llm": {
