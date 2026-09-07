@@ -218,6 +218,7 @@ class TalkscribeBot:
                 username=update.effective_user.username or "",
                 first_name=update.effective_user.first_name or "",
                 voice_transcription=result.text,
+                file_id=file_id,
                 timestamp=message.date.timestamp(),
             )
             logger.debug("Stored transcription in history for chat %s", update.effective_chat.id)
@@ -262,7 +263,7 @@ class TalkscribeBot:
         )
 
     async def cmd_transcribe(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /transcribe — force-transcribe backlog voice messages not yet transcribed."""
+        """Handle /transcribe — re-download and transcribe backlog voice messages that have file_ids."""
         user = update.effective_user
         if not user:
             return
@@ -273,28 +274,54 @@ class TalkscribeBot:
 
         chat_id = update.effective_chat.id
         logger.info("Command /transcribe from user %s in chat %s", user.id, chat_id)
-        await self._send_private(update, context, "🎙️ Looking for untranscribed voice messages...")
+        await self._send_private(update, context, "🎙️ Checking for untranscribed voice messages...")
 
         try:
-            # Get voice messages that were stored as text but not transcribed
-            conn = await self.store._get_conn()
-            cursor = await conn.execute(
-                """SELECT * FROM messages
-                   WHERE chat_id = ?
-                     AND voice_transcription IS NULL
-                     AND (text IS NULL OR text = '')
-                   ORDER BY timestamp ASC
-                   LIMIT 10""",
-                (chat_id,),
+            # Find voice messages with file_id but no transcription
+            untranscribed = await self.store.get_untranscribed_messages(
+                chat_id=chat_id,
+                limit=20,
             )
-            rows = await cursor.fetchall()
-            untranscribed = [dict(row) for row in rows]
 
             if not untranscribed:
-                await self._send_private(update, context, "✅ No untranscribed voice messages found.")
+                await self._send_private(update, context, "✅ No untranscribed voice messages found. New voice messages will be stored with file_id going forward.\n\n*Note:* Messages sent while the bot was offline are not in the database. Forward them to me and I'll transcribe them.")
                 return
 
-            await self._send_private(update, context, f"🎙️ Found {len(untranscribed)} untranscribed messages. This feature requires audio file IDs stored in the database — backlog messages may not have downloadable audio. Try using the original voice message in Telegram instead.")
+            await self._send_private(update, context, f"🎙️ Found {len(untranscribed)} untranscribed messages. Transcribing now...")
+
+            success = 0
+            failed = 0
+            for msg in untranscribed:
+                msg_id = msg["id"]
+                file_id = msg.get("file_id", "")
+                if not file_id:
+                    failed += 1
+                    continue
+
+                try:
+                    audio_data, mime = await self._download_audio(file_id)
+                    result = await self.transcriber.transcribe(audio_data, mime)
+
+                    if result.text and result.text != "(no speech detected)":
+                        # Update the DB record with the transcription
+                        conn = await self.store._get_conn()
+                        await conn.execute(
+                            "UPDATE messages SET voice_transcription = ? WHERE id = ?",
+                            (result.text, msg_id),
+                        )
+                        await conn.commit()
+                        success += 1
+                        logger.info("Backlog transcribe OK: msg=%s, %d chars", msg_id, len(result.text))
+                    else:
+                        failed += 1
+                        logger.warning("Backlog transcribe empty: msg=%s", msg_id)
+                except Exception as e:
+                    failed += 1
+                    logger.warning("Backlog transcribe failed for msg=%s: %s", msg_id, e)
+
+            await self._send_private(update, context,
+                f"✅ Done! {success} transcribed, {failed} failed."
+            )
 
         except Exception as e:
             logger.exception("Transcribe failed for user %s", user.id)

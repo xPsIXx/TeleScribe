@@ -93,25 +93,26 @@ class AppConfig(BaseSettings):
     telegram_bot_token: str = ""
     data_dir: str = "/data"
 
-    # Internal: set to True when save() is called by the dashboard
-    # Prevents env vars from overriding dashboard-managed settings on reload
-    _dashboard_managed: bool = False
-
     @classmethod
     def load(cls, path: str | Path | None = None) -> AppConfig:
-        """Load from YAML file, then overlay env vars."""
+        """Load from YAML file, then apply env var overrides for non-dashboard-managed settings.
+
+        Once the YAML file exists (after first dashboard save), env vars for transcription
+        settings are ignored — the YAML values take precedence. Only LLM and token env vars
+        always apply since they can't be set via the dashboard.
+        """
         path = Path(path) if path else DEFAULT_CONFIG_PATH
 
-        dashboard_managed = False
-        if path.exists():
+        yaml_exists = path.exists()
+        if yaml_exists:
             with open(path) as f:
                 raw = yaml.safe_load(f) or {}
-            dashboard_managed = raw.pop("_dashboard_managed", False)
             # Migrate old format: authorized_users was a string "*" but is now a list
             if isinstance(raw.get("bot", {}).get("authorized_users"), str):
                 raw["bot"]["authorized_users"] = []
             # Strip removed fields that may exist in old config files
             raw.get("bot", {}).pop("auth_required_callback", None)
+            raw.pop("_dashboard_managed", None)  # legacy field, no longer used
             base = cls.model_validate(raw)
         else:
             # Create default config if it doesn't exist
@@ -119,15 +120,14 @@ class AppConfig(BaseSettings):
             base = cls()
             base.save(path)
 
-        # Overlay env var overrides
-        # NOTE: when the config was saved by the dashboard (_dashboard_managed = True),
-        # skip env var overrides for transcription/engine/model/device since those
-        # are managed through the UI.
+        # Apply env var overrides — only for settings NOT managed by the dashboard.
+        # When YAML exists, the saved values always win for transcription settings.
+        # Env vars only set initial defaults on first run (no YAML yet).
         token = os.getenv("TELEGRAM_BOT_TOKEN", "")
         if token:
             base.telegram_bot_token = token
 
-        if not dashboard_managed:
+        if not yaml_exists:
             asr_engine = os.getenv("ASR_ENGINE", "")
             if asr_engine:
                 base.transcription.engine = asr_engine  # type: ignore
@@ -180,7 +180,6 @@ class AppConfig(BaseSettings):
         path = Path(path) if path else DEFAULT_CONFIG_PATH
 
         data = {
-            "_dashboard_managed": True,
             "bot": {
                 "privacy_mode": self.bot.privacy_mode,
                 "admin_user_ids": self.bot.admin_user_ids,

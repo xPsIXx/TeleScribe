@@ -49,6 +49,7 @@ class MessageStore:
                 timestamp REAL NOT NULL,
                 replied BOOLEAN DEFAULT 0,
                 summarized BOOLEAN DEFAULT 0,
+                file_id TEXT DEFAULT '',
                 UNIQUE(chat_id, message_id)
             );
 
@@ -67,6 +68,10 @@ class MessageStore:
             await conn.execute("ALTER TABLE messages ADD COLUMN summarized BOOLEAN DEFAULT 0")
         except aiosqlite.OperationalError:
             pass  # column already exists
+        try:
+            await conn.execute("ALTER TABLE messages ADD COLUMN file_id TEXT DEFAULT ''")
+        except aiosqlite.OperationalError:
+            pass  # column already exists
         await conn.commit()
         logger.debug("Database schema initialized")
 
@@ -79,6 +84,7 @@ class MessageStore:
         username: str = "",
         first_name: str = "",
         voice_transcription: str = "",
+        file_id: str = "",
         reply_to_message_id: Optional[int] = None,
         is_topic: bool = False,
         topic_id: Optional[int] = None,
@@ -95,10 +101,10 @@ class MessageStore:
         await conn.execute(
             """INSERT OR REPLACE INTO messages
                (chat_id, message_id, user_id, username, first_name, text,
-                voice_transcription, reply_to_message_id, is_topic, topic_id, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                voice_transcription, file_id, reply_to_message_id, is_topic, topic_id, timestamp)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (chat_id, message_id, user_id, username, first_name, text,
-             voice_transcription, reply_to_message_id, is_topic, topic_id, ts),
+             voice_transcription, file_id, reply_to_message_id, is_topic, topic_id, ts),
         )
         await conn.commit()
         logger.debug("Stored %s msg: chat=%s, user=%s, msg=%s (%d chars)",
@@ -272,6 +278,38 @@ class MessageStore:
         )
         await conn.commit()
         logger.debug("Marked %d messages as replied", len(message_ids))
+
+    async def get_untranscribed_messages(
+        self,
+        chat_id: int,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Get voice messages that have a file_id but no transcription (failed or backlog)."""
+        conn = await self._get_conn()
+        cursor = await conn.execute(
+            """SELECT * FROM messages
+               WHERE chat_id = ?
+                 AND file_id != ''
+                 AND (voice_transcription IS NULL OR voice_transcription = '')
+               ORDER BY timestamp ASC
+               LIMIT ?""",
+            (chat_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def get_messages_by_ids(self, ids: list[int]) -> list[dict]:
+        """Get messages by their primary key IDs."""
+        if not ids:
+            return []
+        conn = await self._get_conn()
+        placeholders = ",".join("?" for _ in ids)
+        cursor = await conn.execute(
+            f"SELECT * FROM messages WHERE id IN ({placeholders})",
+            ids,
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
 
     async def mark_as_summarized(self, message_ids: list[int]) -> None:
         """Mark messages as summarized."""
