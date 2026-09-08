@@ -167,6 +167,8 @@ class TalkscribeBot:
         """Handle voice messages — transcribe and reply publicly (no button)."""
         if not update.effective_user:
             return
+        if not update.effective_chat:
+            return
 
         user_id = update.effective_user.id
         message = update.message
@@ -189,6 +191,19 @@ class TalkscribeBot:
 
         if not file_id:
             return
+
+        # Store message in history with file_id BEFORE transcribing
+        # so that if transcription fails, /transcribe can retry the backlog.
+        await self.store.store_message(
+            chat_id=update.effective_chat.id,
+            message_id=message.message_id,
+            user_id=user_id,
+            username=update.effective_user.username or "",
+            first_name=update.effective_user.first_name or "",
+            voice_transcription="",
+            file_id=file_id,
+            timestamp=message.date.timestamp(),
+        )
 
         # Optional "Transcribing..." feedback (ephemeral — temporary status)
         if self.config.bot.show_transcribing_feedback:

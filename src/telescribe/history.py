@@ -298,19 +298,6 @@ class MessageStore:
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
-    async def get_messages_by_ids(self, ids: list[int]) -> list[dict]:
-        """Get messages by their primary key IDs."""
-        if not ids:
-            return []
-        conn = await self._get_conn()
-        placeholders = ",".join("?" for _ in ids)
-        cursor = await conn.execute(
-            f"SELECT * FROM messages WHERE id IN ({placeholders})",
-            ids,
-        )
-        rows = await cursor.fetchall()
-        return [dict(row) for row in rows]
-
     async def mark_as_summarized(self, message_ids: list[int]) -> None:
         """Mark messages as summarized."""
         if not message_ids:
