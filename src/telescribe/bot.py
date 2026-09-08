@@ -642,17 +642,17 @@ class TalkscribeBot:
         """Set bot commands for private and group chats."""
         self._app = application
         commands = [
-            BotCommand("start", "Show welcome message"),
-            BotCommand("help", "Show this help"),
-            BotCommand("summarize", "Summarize unsummarized transcriptions from others"),
-            BotCommand("summarize_all", "Summarize last day per user across all chats"),
-            BotCommand("reply", "Reply to unreplied transcriptions from others"),
-            BotCommand("transcribe", "Transcribe backlog voice messages"),
+            BotCommand("start", "Show welcome message", api_kwargs={"is_ephemeral": True}),
+            BotCommand("help", "Show this help", api_kwargs={"is_ephemeral": True}),
+            BotCommand("summarize", "Summarize unsummarized transcriptions from others", api_kwargs={"is_ephemeral": True}),
+            BotCommand("summarize_all", "Summarize last day per user across all chats", api_kwargs={"is_ephemeral": True}),
+            BotCommand("reply", "Reply to unreplied transcriptions from others", api_kwargs={"is_ephemeral": True}),
+            BotCommand("transcribe", "Transcribe backlog voice messages", api_kwargs={"is_ephemeral": True}),
         ]
         await application.bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
         await application.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
         await application.bot.set_my_commands(commands)
-        logger.info("Bot commands registered")
+        logger.info("Bot commands registered (ephemeral)")
 
         # Start background task to watch for hot-reload signals
         application.create_task(self._reload_watcher(), "reload-watcher")
