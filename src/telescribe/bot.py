@@ -343,9 +343,17 @@ class TalkscribeBot:
             await self._send_private(update, context, f"❌ Transcribe failed: {str(e)}")
 
     async def cmd_summarize(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /summarize — summarize all unsummarized voice transcriptions from others."""
+        """Handle /summarize — summarize all unsummarized voice transcriptions from others.
+
+        If the first argument is "all", delegates to cmd_summarize_all instead.
+        """
         user = update.effective_user
         if not user:
+            return
+
+        # Check if this is "summarize all" request
+        if context.args and context.args[0].lower() == "all":
+            await self.cmd_summarize_all(update, context)
             return
 
         if self.config.bot.auth_required_summarize and not self._is_authorized(user.id):
@@ -424,6 +432,121 @@ class TalkscribeBot:
         except Exception as e:
             logger.exception("Summary failed for user %s", user.id)
             await self._send_private(update, context, f"❌ Summary failed: {str(e)}")
+
+    async def cmd_summarize_all(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /summarize_all — summarize the last day's transcriptions per user across ALL chats.
+
+        Groups transcriptions by user (mom, wife, etc.) and generates a per-person
+        summary so you can catch up on what each person said without jumping between groups.
+        Default window is 1 day. Pass a number + d/h to change: /summarize_all 2d, /summarize_all 12h.
+        Also accessible as /summarize all.
+        """
+        user = update.effective_user
+        if not user:
+            return
+
+        if self.config.bot.auth_required_summarize and not self._is_authorized(user.id):
+            logger.warning("Unauthorized user %s tried /summarize_all", user.id)
+            await self._send_private(update, context, "❌ You are not authorized to use this command.")
+            return
+
+        # Parse time window from args (default 1 day)
+        max_age_days = 1
+        if context.args and context.args[0].lower() != "all":
+            try:
+                arg = context.args[0]
+                if arg.endswith("d"):
+                    max_age_days = int(arg[:-1])
+                elif arg.endswith("h"):
+                    max_age_days = int(arg[:-1]) / 24.0
+                elif arg.endswith("m"):
+                    max_age_days = int(arg[:-1]) / 1440.0
+                else:
+                    max_age_days = int(arg)
+            except (ValueError, TypeError):
+                pass
+
+        logger.info("Command /summarize_all from user %s (max_age=%s days)", user.id, max_age_days)
+        await self._send_private(update, context, f"📊 Looking for unsummarized transcriptions across all chats (last {max_age_days}d)...")
+
+        try:
+            # Fetch ALL unsummarized transcriptions across every chat
+            transcriptions = await self.store.get_unsummarized_transcriptions_all(
+                max_age_days=max_age_days,
+                exclude_user_id=user.id,
+            )
+
+            if not transcriptions:
+                logger.info("No unsummarized transcriptions found across any chat")
+                await self._send_private(update, context, "✅ No unsummarized transcriptions found in the last day.")
+                return
+
+            # Group by user_id
+            users: dict[int, dict] = {}
+            for msg in transcriptions:
+                uid = msg["user_id"]
+                if uid not in users:
+                    users[uid] = {
+                        "user_id": uid,
+                        "first_name": msg.get("first_name") or msg.get("username") or f"User {uid}",
+                        "messages": [],
+                    }
+                users[uid]["messages"].append(msg)
+
+            logger.info("Found %d transcriptions from %d users across all chats", len(transcriptions), len(users))
+
+            # Generate a summary per user
+            client = self._get_llm_client()
+            all_summaries = []
+            all_marked_ids = []
+
+            for uid, uinfo in users.items():
+                msgs = uinfo["messages"]
+                formatted = format_messages_for_summary(msgs)
+                user_prompt = (
+                    f"Summarize what {uinfo['first_name']} talked about in these voice messages. "
+                    f"Keep it concise — key topics, questions, updates. Here are their messages:\n\n{formatted}"
+                )
+
+                start_t = time.perf_counter()
+                response = await client.chat.completions.create(
+                    model=self.config.llm.model,
+                    messages=[
+                        {"role": "system", "content": "You summarize voice messages concisely. Write in natural English."},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.3,
+                    max_tokens=800,
+                )
+
+                summary = ""
+                if response.choices and len(response.choices) > 0:
+                    choice = response.choices[0]
+                    if hasattr(choice, 'message') and choice.message:
+                        summary = (choice.message.content or "").strip()
+                    elif hasattr(choice, 'text'):
+                        summary = (choice.text or "").strip()
+
+                elapsed = time.perf_counter() - start_t
+                if summary:
+                    all_summaries.append(f"👤 *{uinfo['first_name']}* ({len(msgs)} msgs):\n{summary}")
+                    logger.info("User %s summary: %d msgs, %d chars in %0.1fs", uid, len(msgs), len(summary), elapsed)
+                else:
+                    all_summaries.append(f"👤 *{uinfo['first_name']}* ({len(msgs)} msgs):\n_(could not generate summary)_")
+
+                all_marked_ids.extend(m["id"] for m in msgs)
+
+            # Mark all as summarized
+            if all_marked_ids:
+                await self.store.mark_as_summarized(all_marked_ids)
+
+            header = f"📊 *Per-Person Summary — Last {max_age_days}d ({len(transcriptions)} total msgs)*\n\n"
+            reply = header + "\n\n".join(all_summaries)
+            await self._send_private(update, context, reply)
+
+        except Exception as e:
+            logger.exception("Summarize_all failed for user %s", user.id)
+            await self._send_private(update, context, f"❌ Summarize all failed: {str(e)}")
 
     async def cmd_reply(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /reply — generate replies to all unreplied voice transcriptions from others."""
@@ -521,6 +644,7 @@ class TalkscribeBot:
             BotCommand("start", "Show welcome message", api_kwargs={"is_ephemeral": True}),
             BotCommand("help", "Show this help", api_kwargs={"is_ephemeral": True}),
             BotCommand("summarize", "Summarize unsummarized transcriptions from others", api_kwargs={"is_ephemeral": True}),
+            BotCommand("summarize_all", "Summarize last day per user across all chats", api_kwargs={"is_ephemeral": True}),
             BotCommand("reply", "Reply to unreplied transcriptions from others", api_kwargs={"is_ephemeral": True}),
             BotCommand("transcribe", "Transcribe backlog voice messages", api_kwargs={"is_ephemeral": True}),
         ]
@@ -580,6 +704,7 @@ class TalkscribeBot:
         app.add_handler(CommandHandler("start", self.cmd_start))
         app.add_handler(CommandHandler("help", self.cmd_help))
         app.add_handler(CommandHandler("summarize", self.cmd_summarize))
+        app.add_handler(CommandHandler("summarize_all", self.cmd_summarize_all))
         app.add_handler(CommandHandler("reply", self.cmd_reply))
         app.add_handler(CommandHandler("transcribe", self.cmd_transcribe))
 

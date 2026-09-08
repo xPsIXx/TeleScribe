@@ -266,6 +266,44 @@ class MessageStore:
         logger.debug("Found %d unsummarized transcriptions in chat %s", len(result), chat_id)
         return result
 
+    async def get_unsummarized_transcriptions_all(
+        self,
+        max_age_days: float = 1.0,
+        exclude_user_id: Optional[int] = None,
+    ) -> list[dict]:
+        """Get ALL unsummarized voice transcriptions across every chat within max_age_days.
+
+        Used by /summarize_all — groups everything the bot has heard in the
+        last N days regardless of which chat it came from.
+        """
+        conn = await self._get_conn()
+        cutoff = time.time() - (max_age_days * 86400)
+        if exclude_user_id:
+            cursor = await conn.execute(
+                """SELECT * FROM messages
+                   WHERE voice_transcription IS NOT NULL
+                     AND voice_transcription != ''
+                     AND summarized = 0
+                     AND user_id != ?
+                     AND timestamp >= ?
+                   ORDER BY chat_id ASC, timestamp ASC""",
+                (exclude_user_id, cutoff),
+            )
+        else:
+            cursor = await conn.execute(
+                """SELECT * FROM messages
+                   WHERE voice_transcription IS NOT NULL
+                     AND voice_transcription != ''
+                     AND summarized = 0
+                     AND timestamp >= ?
+                   ORDER BY chat_id ASC, timestamp ASC""",
+                (cutoff,),
+            )
+        rows = await cursor.fetchall()
+        result = [dict(row) for row in rows]
+        logger.debug("Found %d unsummarized transcriptions across all chats (last %d days)", len(result), max_age_days)
+        return result
+
     async def mark_as_replied(self, message_ids: list[int]) -> None:
         """Mark messages as replied."""
         if not message_ids:
