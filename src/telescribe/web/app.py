@@ -30,6 +30,18 @@ _bot_reload_requested = False
 # Model download tracking: {model_name: {"status": "pending"|"downloading"|"done"|"error", "progress": 0-100}}
 _downloads: dict[str, dict] = {}
 
+# Map model ID -> expected HF hub directory name (exact match, no substring fuzz)
+_LOCAL_HF_DIRS = {
+    "tiny": "models--Systran--faster-whisper-tiny",
+    "base": "models--Systran--faster-whisper-base",
+    "small": "models--Systran--faster-whisper-small",
+    "medium": "models--Systran--faster-whisper-medium",
+    "large-v3": "models--Systran--faster-whisper-large-v3",
+    "distil-small.en": "models--Systran--faster-distil-whisper-small.en",
+    "distil-medium.en": "models--Systran--faster-distil-whisper-medium.en",
+    "distil-large-v3": "models--Systran--faster-distil-whisper-large-v3",
+}
+
 # Per-engine model definitions
 ENGINE_MODELS = {
     "local": [
@@ -78,35 +90,27 @@ def _check_model_downloaded(engine: str, model: str) -> bool:
     home = Path.home()
 
     if engine == "local":
-        # Check /data/models/ first (persistent volume), then ~/.cache
-        # HF_HOME is set to /data/models/huggingface, so HF hub cache is /data/models/huggingface/hub/
-        # Check direct model name match (e.g. /data/models/distil-medium.en/)
+        # Check /data/models/<model>/ directly (e.g. /data/models/distil-medium.en/)
         model_dir = Path(data_dir) / "models" / model
         if model_dir.exists() and any(model_dir.rglob("*.bin")):
             return True
-        # Check HF_HOME-based cache (models downloaded via huggingface hub)
-        # HF hub stores models as models--ORG--MODELNAME, e.g. models--Systran--faster-distil-whisper-medium.en
-        hf_dir = Path(data_dir) / "models" / "huggingface" / "hub"
-        if hf_dir.exists():
-            # Try all possible naming patterns
-            for p in hf_dir.rglob(f"*{model}*"):
-                if p.is_dir() and any(p.rglob("*.bin")):
-                    return True
-            # Also check direct org-model patterns
-            for p in hf_dir.iterdir():
-                if p.is_dir() and p.name.startswith("models--"):
-                    if any(p.rglob("*.bin")):
-                        # Check if this is the right model by name
-                        if model.replace("-", "_") in p.name or model in p.name:
-                            return True
+        # Check ~/.cache/faster-whisper/<model>/ directly
         model_dir = home / ".cache" / "faster-whisper" / model
-        if model_dir.exists():
+        if model_dir.exists() and any(model_dir.rglob("*.bin")):
             return True
-        hf_cache = home / ".cache" / "huggingface" / "hub"
-        if hf_cache.exists():
-            for p in hf_cache.rglob(f"*{model}*"):
-                if p.is_dir():
-                    return True
+
+        # Check HF hub caches using exact directory name matching
+        # HF hub dirs: models--Systran--faster-whisper-{name} or models--Systran--faster-distil-whisper-{name}
+        expected_dir = _LOCAL_HF_DIRS.get(model)
+        if expected_dir:
+            for hf_dir in [
+                Path(data_dir) / "models" / "huggingface" / "hub",
+                home / ".cache" / "huggingface" / "hub",
+            ]:
+                if hf_dir.exists():
+                    candidate = hf_dir / expected_dir
+                    if candidate.is_dir() and any(candidate.rglob("*.bin")):
+                        return True
         return False
 
     if engine == "moonshine":
@@ -157,11 +161,17 @@ def _get_model_paths(engine: str, model: str) -> list[Path]:
         model_dir = home / ".cache" / "faster-whisper" / model
         if model_dir.exists():
             paths.append(model_dir)
-        hf_cache = home / ".cache" / "huggingface" / "hub"
-        if hf_cache.exists():
-            for p in hf_cache.rglob(f"*{model}*"):
-                if p.is_dir():
-                    paths.append(p)
+        # HF hub caches — exact dir name match
+        expected_dir = _LOCAL_HF_DIRS.get(model)
+        if expected_dir:
+            for hf_dir in [
+                Path(data_dir) / "models" / "huggingface" / "hub",
+                home / ".cache" / "huggingface" / "hub",
+            ]:
+                if hf_dir.exists():
+                    candidate = hf_dir / expected_dir
+                    if candidate.is_dir():
+                        paths.append(candidate)
     elif engine == "moonshine":
         # Check /data/models/moonshine/ first, then home cache
         cache = Path(data_dir) / "models" / "moonshine"
@@ -196,24 +206,31 @@ def _check_model_valid(engine: str, model: str) -> bool:
     home = Path.home()
 
     if engine == "local":
-        # Check /data/models/ first, then ~/.cache
+        # Check /data/models/<model>/ directly
         model_dir = Path(data_dir) / "models" / model
         if model_dir.exists():
             bins = list(model_dir.rglob("*.bin"))
             if bins and max(f.stat().st_size for f in bins) > 1_000_000:
                 return True
+        # Check ~/.cache/faster-whisper/<model>/ directly
         model_dir = home / ".cache" / "faster-whisper" / model
         if model_dir.exists():
             bins = list(model_dir.rglob("*.bin"))
             if bins and max(f.stat().st_size for f in bins) > 1_000_000:
                 return True
-        hf_cache = home / ".cache" / "huggingface" / "hub"
-        if hf_cache.exists():
-            for p in hf_cache.rglob(f"*{model}*"):
-                if p.is_dir():
-                    bins = list(p.rglob("*.bin"))
-                    if bins and max(f.stat().st_size for f in bins) > 1_000_000:
-                        return True
+        # Check HF hub caches — exact dir name match, both locations
+        expected_dir = _LOCAL_HF_DIRS.get(model)
+        if expected_dir:
+            for hf_dir in [
+                Path(data_dir) / "models" / "huggingface" / "hub",
+                home / ".cache" / "huggingface" / "hub",
+            ]:
+                if hf_dir.exists():
+                    candidate = hf_dir / expected_dir
+                    if candidate.is_dir():
+                        bins = list(candidate.rglob("*.bin"))
+                        if bins and max(f.stat().st_size for f in bins) > 1_000_000:
+                            return True
         return False
 
     if engine == "moonshine":
