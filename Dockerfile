@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libgomp1 \
     libsndfile1 \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -28,26 +30,17 @@ COPY src/ ./src/
 # silently uninstalls sherpa-onnx / moonshine-voice.
 RUN uv sync --no-dev --no-editable
 
-# sherpa-onnx 1.13 wheels link libonnxruntime.so but do not bundle it.
-# Point $ORIGIN (sherpa_onnx/lib) at the .so from the onnxruntime wheel.
-RUN python - <<'PY'
-from pathlib import Path
-import onnxruntime
-
-capi = Path(onnxruntime.__file__).resolve().parent / "capi"
-libs = sorted(capi.glob("libonnxruntime.so*"))
-print("onnxruntime capi libs:", [str(p) for p in libs])
-if not libs:
-    raise SystemExit("onnxruntime wheel has no libonnxruntime.so*")
-src = next((p for p in libs if p.name == "libonnxruntime.so"), libs[0])
-dest_dir = Path("/app/.venv/lib/python3.12/site-packages/sherpa_onnx/lib")
-dest_dir.mkdir(parents=True, exist_ok=True)
-dest = dest_dir / "libonnxruntime.so"
-if dest.exists() or dest.is_symlink():
-    dest.unlink()
-dest.symlink_to(src)
-print("linked", dest, "->", src)
-PY
+# sherpa-onnx 1.13 wheels need libonnxruntime.so with ELF version VERS_1.28.2.
+# The pip onnxruntime 1.30 wheel does not export that. Install Microsoft ORT 1.28.2.
+RUN curl -fsSL -o /tmp/ort.tgz \
+      https://github.com/microsoft/onnxruntime/releases/download/v1.28.2/onnxruntime-linux-x64-1.28.2.tgz \
+ && mkdir -p /tmp/ort \
+ && tar --no-same-owner -xzf /tmp/ort.tgz -C /tmp/ort \
+ && dest=/app/.venv/lib/python3.12/site-packages/sherpa_onnx/lib \
+ && mkdir -p "$dest" \
+ && cp -a /tmp/ort/*/lib/libonnxruntime.so* "$dest/" \
+ && ls -l "$dest"/libonnxruntime.so* \
+ && rm -rf /tmp/ort /tmp/ort.tgz
 
 # Fail the image if the dashboard or ASR engines did not actually install.
 RUN python -c "\
