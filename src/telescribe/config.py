@@ -68,6 +68,11 @@ class TranscriptionConfig(BaseSettings):
     compression_ratio_threshold: Optional[float] = None
     initial_prompt: Optional[str] = None
     language: Optional[str] = None
+    # Moonshine's own Silero VAD (separate from Whisper vad_filter).
+    # Off by default so pauses are not treated as end-of-utterance.
+    moonshine_vad: bool = False
+    moonshine_vad_threshold: float = 0.35
+    moonshine_vad_max_segment: float = 15.0
     # Bumped once when we disabled previous-text conditioning. Do not re-apply
     # that migration on later loads — the user may turn the option back on.
     asr_defaults_version: int = 2
@@ -280,6 +285,9 @@ class AppConfig(BaseSettings):
                 "compression_ratio_threshold": self.transcription.compression_ratio_threshold,
                 "initial_prompt": self.transcription.initial_prompt,
                 "language": self.transcription.language,
+                "moonshine_vad": self.transcription.moonshine_vad,
+                "moonshine_vad_threshold": self.transcription.moonshine_vad_threshold,
+                "moonshine_vad_max_segment": self.transcription.moonshine_vad_max_segment,
                 "asr_defaults_version": self.transcription.asr_defaults_version,
             },
             "llm": {

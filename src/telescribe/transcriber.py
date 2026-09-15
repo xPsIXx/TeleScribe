@@ -268,27 +268,48 @@ class MoonshineTranscriber(BaseTranscriber):
 
     def _load(self):
         lang = self._language()
-        if self._transcriber is not None and self._loaded_lang == lang:
+        cfg = self.config.transcription
+        vad_key = (
+            lang,
+            bool(cfg.moonshine_vad),
+            float(cfg.moonshine_vad_threshold),
+            float(cfg.moonshine_vad_max_segment),
+        )
+        if self._transcriber is not None and getattr(self, "_loaded_vad_key", None) == vad_key:
             return
 
         from moonshine_voice import Transcriber, get_model_for_language
 
-        logger.info("Loading Moonshine model for language=%s", lang)
+        if cfg.moonshine_vad:
+            options = {
+                "vad_threshold": str(cfg.moonshine_vad_threshold),
+                "vad_look_behind_sample_count": "8192",
+                "vad_max_segment_duration": str(cfg.moonshine_vad_max_segment),
+            }
+        else:
+            # Treat the whole clip as speech so pauses are not dropped.
+            options = {
+                "vad_threshold": "0.0",
+                "vad_look_behind_sample_count": "8192",
+                "vad_max_segment_duration": "3600.0",
+            }
+
+        logger.info(
+            "Loading Moonshine language=%s vad=%s threshold=%s max_seg=%s",
+            lang, cfg.moonshine_vad, options["vad_threshold"], options["vad_max_segment_duration"],
+        )
         try:
             self._model_path, self._model_arch = get_model_for_language(lang)
             self._transcriber = Transcriber(
                 model_path=self._model_path,
                 model_arch=self._model_arch,
-                options={
-                    "vad_threshold": "0.35",
-                    "vad_look_behind_sample_count": "8192",
-                    "vad_max_segment_duration": "15.0",
-                },
+                options=options,
             )
         except Exception as e:
-            log_failure(logger, "moonshine.load", e, language=lang)
+            log_failure(logger, "moonshine.load", e, language=lang, vad=cfg.moonshine_vad)
             raise
         self._loaded_lang = lang
+        self._loaded_vad_key = vad_key
         logger.info("Moonshine model loaded: path=%s, arch=%s", self._model_path, self._model_arch)
 
     async def _transcribe_impl(self, audio_data: bytes, mime_type: str = "") -> TranscriptionResult:

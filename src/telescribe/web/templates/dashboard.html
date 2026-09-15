@@ -448,9 +448,26 @@
                 </label>
                 <label id="vadFilterRow" class="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" id="vadFilter" class="w-4 h-4 accent-accent" {% if config.transcription.vad_filter %}checked{% endif %}>
-                    <span class="text-sm font-medium">VAD filter</span>
-                    <span class="text-xs text-muted ml-auto">Whisper only. Off = transcribe the full clip, including pauses</span>
+                    <span class="text-sm font-medium">Whisper VAD</span>
+                    <span class="text-xs text-muted ml-auto">Off = full clip, including pauses</span>
                 </label>
+                <label id="moonshineVadRow" class="flex items-center gap-2 cursor-pointer" style="display:none">
+                    <input type="checkbox" id="moonshineVad" class="w-4 h-4 accent-accent" {% if config.transcription.moonshine_vad %}checked{% endif %} onchange="toggleMoonshineVadOpts()">
+                    <span class="text-sm font-medium">Moonshine VAD</span>
+                    <span class="text-xs text-muted ml-auto">On = skip silence; off = keep pauses</span>
+                </label>
+            </div>
+            <div id="moonshineVadOpts" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4" style="display:none">
+                <div>
+                    <label>Moonshine VAD threshold <span class="text-xs text-muted" id="moonshineVadThLabel">{{ config.transcription.moonshine_vad_threshold or 0.35 }}</span></label>
+                    <input id="moonshineVadThreshold" type="range" min="0.05" max="0.9" step="0.05" class="range-slider" value="{{ config.transcription.moonshine_vad_threshold or 0.35 }}" oninput="document.getElementById('moonshineVadThLabel').textContent=this.value">
+                    <span class="text-xs text-muted">Lower = longer segments / more noise. Higher = shorter, may clip words.</span>
+                </div>
+                <div>
+                    <label>Max segment (seconds)</label>
+                    <input id="moonshineVadMaxSeg" type="number" min="5" max="120" step="1" class="input-field" value="{{ config.transcription.moonshine_vad_max_segment or 15 }}">
+                    <span class="text-xs text-muted">Force a new line after this many seconds of speech</span>
+                </div>
             </div>
         </div>
 
@@ -535,7 +552,7 @@
 
         const ENGINE_HINTS = {
             local: 'faster-whisper — local models. Device, compute, language, VAD, and advanced decoding apply here.',
-            moonshine: 'Moonshine — pick a language in the Model dropdown, then Download. CPU only. Language field and Whisper decoding options are hidden.',
+            moonshine: 'Moonshine — pick a language, then Download. CPU only. Optional VAD skips silence; leave it off if pauses were getting cut.',
             parakeet: 'Parakeet TDT 0.6B v2 — English, CPU. One model. Whisper/Moonshine options are hidden.',
         };
         const ENGINE_DEVICES = {
@@ -570,6 +587,7 @@
             const languageGroup = document.getElementById('languageGroup');
             const modelNote = document.getElementById('modelNote');
             const vadRow = document.getElementById('vadFilterRow');
+            const moonVadRow = document.getElementById('moonshineVadRow');
             const hint = document.getElementById('engineHint');
             const isLocal = engine === 'local';
 
@@ -603,6 +621,8 @@
                 languageGroup.style.display = 'none';
                 if (vadRow) vadRow.style.display = 'none';
             }
+            if (moonVadRow) moonVadRow.style.display = engine === 'moonshine' ? 'flex' : 'none';
+            toggleMoonshineVadOpts();
 
             modelNote.textContent = isLocal || engine === 'moonshine' || engine === 'parakeet'
                 ? 'Select a model → click Download if needed'
@@ -839,6 +859,13 @@
         }
 
         // ====== Save Config ======
+        function toggleMoonshineVadOpts() {
+            const engine = document.querySelector('.engine-card.active')?.dataset.engine || 'local';
+            const on = engine === 'moonshine' && document.getElementById('moonshineVad')?.checked;
+            const opts = document.getElementById('moonshineVadOpts');
+            if (opts) opts.style.display = on ? 'grid' : 'none';
+        }
+
         function optionalFloat(id) {
             const el = document.getElementById(id);
             if (!el) return null;
@@ -875,6 +902,9 @@
                 show_transcribing_feedback: document.getElementById('showFeedback').checked,
                 show_transcription_header: document.getElementById('showHeader').checked,
                 vad_filter: document.getElementById('vadFilter').checked,
+                moonshine_vad: document.getElementById('moonshineVad').checked,
+                moonshine_vad_threshold: parseFloat(document.getElementById('moonshineVadThreshold').value) || 0.35,
+                moonshine_vad_max_segment: parseFloat(document.getElementById('moonshineVadMaxSeg').value) || 15,
                 vad_min_silence_ms: parseInt(document.getElementById('vadMinSilence')?.value) || 700,
                 vad_speech_pad_ms: parseInt(document.getElementById('vadSpeechPad')?.value) || 400,
                 vad_threshold: parseFloat(document.getElementById('vadThreshold')?.value) || 0.45,

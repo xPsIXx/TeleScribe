@@ -369,6 +369,9 @@ class ConfigUpdate(BaseModel):
     compression_ratio_threshold: float | None = None
     initial_prompt: str = ""
     language: str
+    moonshine_vad: bool = False
+    moonshine_vad_threshold: float = 0.35
+    moonshine_vad_max_segment: float = 15.0
     llm_url: str
     llm_model: str
     llm_temp: float
@@ -424,6 +427,9 @@ async def update_config(update: ConfigUpdate):
     cfg.transcription.compression_ratio_threshold = update.compression_ratio_threshold
     cfg.transcription.initial_prompt = update.initial_prompt or None
     cfg.transcription.language = update.language or None
+    cfg.transcription.moonshine_vad = update.moonshine_vad
+    cfg.transcription.moonshine_vad_threshold = update.moonshine_vad_threshold
+    cfg.transcription.moonshine_vad_max_segment = update.moonshine_vad_max_segment
     cfg.llm.base_url = (update.llm_url or "").rstrip("/")
     cfg.llm.model = update.llm_model
     cfg.llm.temperature = update.llm_temp
@@ -484,6 +490,9 @@ async def get_config_api():
         "compression_ratio_threshold": cfg.transcription.compression_ratio_threshold,
         "initial_prompt": cfg.transcription.initial_prompt or "",
         "language": cfg.transcription.language or "",
+        "moonshine_vad": cfg.transcription.moonshine_vad,
+        "moonshine_vad_threshold": cfg.transcription.moonshine_vad_threshold,
+        "moonshine_vad_max_segment": cfg.transcription.moonshine_vad_max_segment,
         "llm_url": cfg.llm.base_url,
         "llm_model": cfg.llm.model,
         "llm_temp": cfg.llm.temperature,

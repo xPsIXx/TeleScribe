@@ -25,6 +25,8 @@ COPY src/ ./src/
 # Do not use `uv run` at container start — it re-syncs without extras and
 # silently uninstalls sherpa-onnx / moonshine-voice.
 RUN uv sync --no-dev --no-editable
+# Fail the image if the dashboard template did not ship in the wheel.
+RUN python -c "from pathlib import Path; from telescribe.web.app import _templates_dir; p = _templates_dir() / 'dashboard.html'; assert p.is_file(), p"
 
 VOLUME ["/data"]
 EXPOSE 8180
