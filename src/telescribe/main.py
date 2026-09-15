@@ -14,6 +14,14 @@ from telescribe.transcriber import create_transcriber
 logger = get_logger("main")
 
 
+def _pkg_ok(mod: str) -> str:
+    try:
+        __import__(mod)
+        return "yes"
+    except ImportError:
+        return "NO"
+
+
 def cli() -> None:
     """Main entry point — starts bot polling and web dashboard concurrently."""
     setup_logging()
@@ -44,6 +52,12 @@ def cli() -> None:
     logger.info("  Authorized:   %s", config.bot.authorized_users or "(none — commands locked)")
     logger.info("  Data dir:     %s", config.data_dir)
     logger.info("  Web dashboard: %s:%s", config.web.host, config.web.port)
+    logger.info(
+        "  Engines installed: faster-whisper=%s moonshine=%s parakeet=%s",
+        _pkg_ok("faster_whisper"),
+        _pkg_ok("moonshine_voice"),
+        _pkg_ok("sherpa_onnx"),
+    )
 
     # Initialize components
     logger.info("Initializing transcriber (%s)...", config.transcription.engine)

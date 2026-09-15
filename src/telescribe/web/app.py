@@ -581,11 +581,15 @@ async def download_model(data: dict):
                 model_path, model_arch = get_model_for_language(model_id)
                 _downloads[model_id]["progress"] = 90
             elif engine == "parakeet":
-                try:
-                    import sherpa_onnx
-                except ImportError:
-                    raise ImportError("sherpa-onnx is not installed. Run: pip install sherpa-onnx")
                 from telescribe.transcriber import ParakeetTranscriber
+                try:
+                    import sherpa_onnx  # noqa: F401
+                except ImportError:
+                    raise ImportError(
+                        "sherpa-onnx is missing from this container. "
+                        "Pull ghcr.io/xpsixx/telescribe:latest (v0.3.5+) — "
+                        "`uv run` used to uninstall it on boot."
+                    )
                 cfg = AppConfig.load()
                 t = ParakeetTranscriber(cfg)
 

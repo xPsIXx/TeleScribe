@@ -1,6 +1,6 @@
 [project]
 name = "telescribe"
-version = "0.3.4"
+version = "0.3.5"
 description = "Telegram bot with ASR transcription, group history, admin commands, and web dashboard"
 license = {text = "MIT"}
 requires-python = ">=3.11"
@@ -20,11 +20,9 @@ dependencies = [
     "ffmpeg-python>=0.2.0",
     "soundfile>=0.12.0",
     "numpy>=1.24.0",
+    "moonshine-voice>=0.1.0",
+    "sherpa-onnx>=1.10.0",
 ]
-
-[project.optional-dependencies]
-moonshine = ["moonshine-voice>=0.1.0"]
-parakeet = ["sherpa-onnx>=1.10.0"]
 
 [project.scripts]
 telescribe = "telescribe.main:cli"

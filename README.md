@@ -116,11 +116,13 @@ Telegram Bot API ──polling──► TeleScribe
 ```bash
 uv sync
 uv run telescribe
-# optional extras are already in the Docker image:
-# uv pip install moonshine-voice sherpa-onnx
 ```
 
 ## Changelog
+
+### v0.3.5
+- Fix Parakeet/Moonshine missing at runtime: `uv run` was re-syncing the image venv **without extras** and uninstalling `sherpa-onnx`
+- Both engines are now regular dependencies; container starts the venv binary directly
 
 ### v0.3.4
 - Dashboard LLM URL/model/temp/max tokens survive Save & Reload (env no longer overwrites YAML)
