@@ -10,10 +10,12 @@ services:
       - ASR_DEVICE=${ASR_DEVICE:-cpu}
       - DATA_DIR=/data
       - LLM_BASE_URL=${LLM_BASE_URL:-http://localhost:8088/v1}
+      - LLM_API_KEY=${LLM_API_KEY:-not-needed}
       - LLM_MODEL=${LLM_MODEL:-qwen3.5-9b}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - telescribe_data:/data
-      - telescribe_cache:/root/.cache  # whisper model cache
+      - telescribe_cache:/root/.cache
     ports:
       - "127.0.0.1:8180:8180"
 

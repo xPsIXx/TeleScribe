@@ -10,7 +10,21 @@ import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_CONFIG_PATH = Path(os.getenv("TALKSCRIBE_CONFIG_PATH", "/opt/data/projects/telescribe/data/config.yaml"))
+def _default_config_path() -> Path:
+    for key in ("TALKSCRIBE_CONFIG_PATH", "TELESCRIBE_CONFIG_PATH"):
+        value = os.getenv(key)
+        if value:
+            return Path(value)
+    data = (
+        os.getenv("DATA_DIR")
+        or os.getenv("TELESCRIBE_DATA_DIR")
+        or os.getenv("TALKSCRIBE_DATA_DIR")
+        or "data"
+    )
+    return Path(data) / "config.yaml"
+
+
+DEFAULT_CONFIG_PATH = _default_config_path()
 
 # Old Parakeet 110M CTC model id — auto-migrated to TDT 0.6B v2.
 _LEGACY_PARAKEET_MODELS = {
@@ -110,11 +124,11 @@ class AppConfig(BaseSettings):
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> AppConfig:
-        """Load from YAML file, then apply env var overrides for non-dashboard-managed settings.
+        """Load YAML, then apply env overrides.
 
-        Once the YAML file exists (after first dashboard save), env vars for transcription
-        settings are ignored — the YAML values take precedence. Only LLM and token env vars
-        always apply since they can't be set via the dashboard.
+        Always from env: TELEGRAM_BOT_TOKEN, LLM_API_KEY, DATA_DIR.
+        First run only (no YAML yet): ASR_*, LLM_BASE_URL, LLM_MODEL, PRIVACY_MODE.
+        After config.yaml exists, dashboard Save is the source of truth for those.
         """
         path = Path(path) if path else DEFAULT_CONFIG_PATH
 
@@ -163,13 +177,26 @@ class AppConfig(BaseSettings):
             base = cls()
             base.save(path)
 
-        # Apply env var overrides — only for settings NOT managed by the dashboard.
-        # When YAML exists, the saved values always win for transcription settings.
-        # Env vars only set initial defaults on first run (no YAML yet).
+        # Secrets and deploy paths always come from the environment.
         token = os.getenv("TELEGRAM_BOT_TOKEN", "")
         if token:
             base.telegram_bot_token = token
 
+        llm_api_key = os.getenv("LLM_API_KEY", "")
+        if llm_api_key:
+            base.llm.api_key = llm_api_key
+
+        data_dir = (
+            os.getenv("DATA_DIR")
+            or os.getenv("TELESCRIBE_DATA_DIR")
+            or os.getenv("TALKSCRIBE_DATA_DIR")
+            or ""
+        )
+        if data_dir:
+            base.data_dir = data_dir
+
+        # Dashboard-managed settings: env is only the first-run seed. After
+        # config.yaml exists, Save & Reload must win (including LLM URL/model).
         if not yaml_exists:
             asr_engine = os.getenv("ASR_ENGINE", "")
             if asr_engine:
@@ -195,31 +222,17 @@ class AppConfig(BaseSettings):
             if asr_lang:
                 base.transcription.language = asr_lang
 
-        # These env var overrides always apply (they can't be set via dashboard)
-        llm_url = os.getenv("LLM_BASE_URL", "")
-        if llm_url:
-            base.llm.base_url = llm_url
+            llm_url = os.getenv("LLM_BASE_URL", "")
+            if llm_url:
+                base.llm.base_url = llm_url
 
-        llm_api_key = os.getenv("LLM_API_KEY", "")
-        if llm_api_key:
-            base.llm.api_key = llm_api_key
+            llm_model = os.getenv("LLM_MODEL", "")
+            if llm_model:
+                base.llm.model = llm_model
 
-        llm_model = os.getenv("LLM_MODEL", "")
-        if llm_model:
-            base.llm.model = llm_model
-
-        data_dir = (
-            os.getenv("DATA_DIR")
-            or os.getenv("TELESCRIBE_DATA_DIR")
-            or os.getenv("TALKSCRIBE_DATA_DIR")
-            or ""
-        )
-        if data_dir:
-            base.data_dir = data_dir
-
-        privacy = os.getenv("PRIVACY_MODE", "")
-        if privacy:
-            base.bot.privacy_mode = privacy.lower() in ("true", "1", "yes")
+            privacy = os.getenv("PRIVACY_MODE", "")
+            if privacy:
+                base.bot.privacy_mode = privacy.lower() in ("true", "1", "yes")
 
         return base
 

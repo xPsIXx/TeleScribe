@@ -37,6 +37,8 @@ def cli() -> None:
         logger.info("  ASR compute: %s", config.transcription.compute_type)
     logger.info("  LLM endpoint: %s", config.llm.base_url)
     logger.info("  LLM model:   %s", config.llm.model)
+    logger.info("  LLM key:     %s", "set" if config.llm.api_key else "empty (using 'not-needed')")
+    logger.info("  LLM temp:    %s  max_tokens=%s", config.llm.temperature, config.llm.max_tokens)
     logger.info("  Privacy mode: %s", config.bot.privacy_mode)
     logger.info("  Admin users:  %s", config.bot.admin_user_ids or "(none)")
     logger.info("  Authorized:   %s", config.bot.authorized_users or "(none — commands locked)")

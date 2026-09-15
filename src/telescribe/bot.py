@@ -117,12 +117,57 @@ class TalkscribeBot:
         if self._llm_client is None:
             from openai import AsyncOpenAI
 
-            logger.info("Initializing LLM client: %s (model=%s)", self.config.llm.base_url, self.config.llm.model)
+            url = (self.config.llm.base_url or "").rstrip("/")
+            if not url:
+                raise RuntimeError("LLM base URL is empty — set it in the dashboard or LLM_BASE_URL")
+            logger.info(
+                "Initializing LLM client: %s (model=%s, temp=%s, max_tokens=%s)",
+                url, self.config.llm.model, self.config.llm.temperature, self.config.llm.max_tokens,
+            )
             self._llm_client = AsyncOpenAI(
                 api_key=self.config.llm.api_key or "not-needed",
-                base_url=self.config.llm.base_url,
+                base_url=url,
+                timeout=60.0,
             )
         return self._llm_client
+
+    async def _llm_complete(self, system: str, user: str, *, temperature: float | None = None, max_tokens: int | None = None) -> str:
+        """One chat completion with failure logging. Returns stripped text (maybe empty)."""
+        client = self._get_llm_client()
+        model = self.config.llm.model
+        temp = self.config.llm.temperature if temperature is None else temperature
+        tokens = self.config.llm.max_tokens if max_tokens is None else max_tokens
+        logger.info("LLM request endpoint=%s model=%s temp=%s max_tokens=%s", self.config.llm.base_url, model, temp, tokens)
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                temperature=temp,
+                max_tokens=tokens,
+            )
+        except Exception as e:
+            log_failure(
+                logger, "llm", e,
+                endpoint=self.config.llm.base_url, model=model,
+            )
+            raise
+
+        text = ""
+        if response.choices:
+            choice = response.choices[0]
+            if getattr(choice, "message", None) is not None:
+                text = (choice.message.content or "").strip()
+            elif getattr(choice, "text", None) is not None:
+                text = (choice.text or "").strip()
+        if not text:
+            logger.warning(
+                "LLM empty response endpoint=%s model=%s choices=%d",
+                self.config.llm.base_url, model, len(response.choices or []),
+            )
+        return text
 
     def _is_admin(self, user_id: int) -> bool:
         """Check if user is an admin."""
@@ -511,34 +556,10 @@ class TalkscribeBot:
             prompt = self.config.bot.prompts.summary + "\n\n" + formatted
 
             start_t = time.perf_counter()
-            client = self._get_llm_client()
-            response = await client.chat.completions.create(
-                model=self.config.llm.model,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that summarizes chat conversations."},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                max_tokens=1500,
+            summary = await self._llm_complete(
+                "You are a helpful assistant that summarizes chat conversations.",
+                prompt,
             )
-
-            # Log the raw response structure for debugging
-            try:
-                raw = response.model_dump() if hasattr(response, 'model_dump') else str(response)
-                logger.debug("LLM response raw: choices=%d, first_choice_type=%s",
-                             len(response.choices),
-                             type(response.choices[0].message).__name__ if response.choices else "none")
-            except Exception:
-                pass
-
-            summary = ""
-            if response.choices and len(response.choices) > 0:
-                choice = response.choices[0]
-                if hasattr(choice, 'message') and choice.message:
-                    summary = (choice.message.content or "").strip()
-                elif hasattr(choice, 'text'):
-                    summary = (choice.text or "").strip()
-
             elapsed = time.perf_counter() - start_t
             msg_count = len(transcriptions)
 
@@ -622,8 +643,6 @@ class TalkscribeBot:
 
             logger.info("Found %d transcriptions from %d users across all chats", len(transcriptions), len(users))
 
-            # Generate a summary per user
-            client = self._get_llm_client()
             all_summaries = []
             all_marked_ids = []
 
@@ -636,24 +655,10 @@ class TalkscribeBot:
                 )
 
                 start_t = time.perf_counter()
-                response = await client.chat.completions.create(
-                    model=self.config.llm.model,
-                    messages=[
-                        {"role": "system", "content": "You summarize voice messages concisely. Write in natural English."},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    temperature=0.3,
-                    max_tokens=800,
+                summary = await self._llm_complete(
+                    "You summarize voice messages concisely. Write in natural English.",
+                    user_prompt,
                 )
-
-                summary = ""
-                if response.choices and len(response.choices) > 0:
-                    choice = response.choices[0]
-                    if hasattr(choice, 'message') and choice.message:
-                        summary = (choice.message.content or "").strip()
-                    elif hasattr(choice, 'text'):
-                        summary = (choice.text or "").strip()
-
                 elapsed = time.perf_counter() - start_t
                 if summary:
                     all_summaries.append(f"👤 *{uinfo['first_name']}* ({len(msgs)} msgs):\n{summary}")
@@ -717,31 +722,7 @@ class TalkscribeBot:
             system_prompt += f"\n\nThe following transcriptions need a reply:\n{combined}"
 
             start_t = time.perf_counter()
-            client = self._get_llm_client()
-            response = await client.chat.completions.create(
-                model=self.config.llm.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                temperature=self.config.llm.temperature,
-                max_tokens=self.config.llm.max_tokens,
-            )
-
-            # Log the raw response structure for debugging
-            try:
-                logger.debug("LLM reply response: choices=%d", len(response.choices) if response.choices else 0)
-            except Exception:
-                pass
-
-            reply = ""
-            if response.choices and len(response.choices) > 0:
-                choice = response.choices[0]
-                if hasattr(choice, 'message') and choice.message:
-                    reply = (choice.message.content or "").strip()
-                elif hasattr(choice, 'text'):
-                    reply = (choice.text or "").strip()
-
+            reply = await self._llm_complete(system_prompt, user_message)
             elapsed = time.perf_counter() - start_t
             msg_count = len(transcriptions)
 
@@ -800,8 +781,13 @@ class TalkscribeBot:
                     self.transcriber = create_transcriber(self.config)
                     # Reset LLM client so it picks up new config
                     self._llm_client = None
-                    logger.info("Transcriber hot-reloaded: engine=%s, model=%s",
-                                 self.config.transcription.engine, self.config.transcription.model)
+                    logger.info(
+                        "Transcriber hot-reloaded: engine=%s, model=%s, llm=%s %s",
+                        self.config.transcription.engine,
+                        self.config.transcription.model,
+                        self.config.llm.base_url,
+                        self.config.llm.model,
+                    )
                 except Exception as e:
                     logger.exception("Hot-reload failed")
                     log_failure(logger, "hot_reload", e)

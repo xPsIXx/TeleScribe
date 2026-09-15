@@ -418,7 +418,7 @@ async def update_config(update: ConfigUpdate):
     cfg.transcription.compression_ratio_threshold = update.compression_ratio_threshold
     cfg.transcription.initial_prompt = update.initial_prompt or None
     cfg.transcription.language = update.language or None
-    cfg.llm.base_url = update.llm_url
+    cfg.llm.base_url = (update.llm_url or "").rstrip("/")
     cfg.llm.model = update.llm_model
     cfg.llm.temperature = update.llm_temp
     cfg.llm.max_tokens = update.llm_max_tokens
@@ -436,7 +436,10 @@ async def update_config(update: ConfigUpdate):
     cfg.history.summarize_retention_days = update.summarize_retention_days
     cfg.history.max_chats = update.max_chats
     cfg.save()
-    logger.info("Config updated: engine=%s->%s, model=%s", old_engine, update.engine, update.model)
+    logger.info(
+        "Config updated: engine=%s->%s, model=%s, llm=%s %s",
+        old_engine, engine, model, cfg.llm.base_url, cfg.llm.model,
+    )
 
     # Auto-trigger bot reload
     global _bot_reload_requested

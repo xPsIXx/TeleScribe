@@ -1,15 +1,19 @@
-# Talkscribe Configuration
-# This file can be edited via the web dashboard or directly.
+# TeleScribe configuration — edited by the web dashboard (Save & Reload).
+# TELEGRAM_BOT_TOKEN and LLM_API_KEY always come from the environment.
 
 bot:
   privacy_mode: true
   admin_user_ids: []
   authorized_users: []
+  show_transcribing_feedback: true
+  show_transcription_header: true
+  auth_required_summarize: true
+  auth_required_reply: true
+  auth_required_transcribe: true
 
-  # Default prompts (overridable per-user)
   prompts:
     summary: |
-      Summarize the following group chat messages concisely. 
+      Summarize the following group chat messages concisely.
       Focus on key decisions, action items, and important information.
       Format as bullet points.
 
@@ -34,6 +38,7 @@ transcription:
   vad_threshold: 0.45
   hallucination_silence_threshold: 2.0
   language: null  # null = auto-detect
+  asr_defaults_version: 2
 
 llm:
   base_url: http://localhost:8088/v1
@@ -46,9 +51,9 @@ llm:
 web:
   host: 0.0.0.0
   port: 8180
-  username: admin
-  password: changeme
 
 history:
   retention_days: 90
+  reply_retention_days: 30
+  summarize_retention_days: 30
   max_chats: 100
