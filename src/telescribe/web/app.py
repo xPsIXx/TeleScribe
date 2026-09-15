@@ -589,11 +589,12 @@ async def download_model(data: dict):
             elif engine == "moonshine":
                 try:
                     from moonshine_voice import get_model_for_language
-                except ImportError:
+                except ImportError as e:
+                    log_failure(logger, "moonshine.import", e)
                     raise ImportError(
-                        "moonshine-voice is missing from this container. "
-                        "Pull ghcr.io/xpsixx/telescribe:latest (v0.3.5+)."
-                    )
+                        f"moonshine-voice failed to import: {e}. "
+                        "Force-pull ghcr.io/xpsixx/telescribe:latest (v0.3.10+)."
+                    ) from e
                 logger.info("Moonshine download starting language=%s", model_id)
                 _downloads[model_id]["progress"] = 30
                 _downloads[model_id]["status_text"] = "Downloading Moonshine model via CDN..."
@@ -604,12 +605,13 @@ async def download_model(data: dict):
                 from telescribe.transcriber import ParakeetTranscriber
                 try:
                     import sherpa_onnx  # noqa: F401
-                except ImportError:
+                except ImportError as e:
+                    log_failure(logger, "parakeet.import", e)
                     raise ImportError(
-                        "sherpa-onnx is missing from this container. "
-                        "Pull ghcr.io/xpsixx/telescribe:latest (v0.3.5+) — "
-                        "`uv run` used to uninstall it on boot."
-                    )
+                        f"sherpa-onnx failed to import: {e}. "
+                        "Force-pull ghcr.io/xpsixx/telescribe:latest (v0.3.10+). "
+                        "Do not override the container command with `uv run`."
+                    ) from e
                 cfg = AppConfig.load()
                 t = ParakeetTranscriber(cfg)
 

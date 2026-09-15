@@ -18,8 +18,8 @@ def _pkg_ok(mod: str) -> str:
     try:
         __import__(mod)
         return "yes"
-    except ImportError:
-        return "NO"
+    except Exception as e:
+        return f"NO ({type(e).__name__}: {e})"
 
 
 def cli() -> None:

@@ -13,6 +13,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    libgomp1 \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -25,8 +27,17 @@ COPY src/ ./src/
 # Do not use `uv run` at container start — it re-syncs without extras and
 # silently uninstalls sherpa-onnx / moonshine-voice.
 RUN uv sync --no-dev --no-editable
-# Fail the image if the dashboard template did not ship in the wheel.
-RUN python -c "from pathlib import Path; from telescribe.web.app import _templates_dir; p = _templates_dir() / 'dashboard.html'; assert p.is_file(), p"
+# Fail the image if the dashboard or ASR engines did not actually install.
+RUN python -c "\
+from pathlib import Path; \
+import faster_whisper, moonshine_voice, sherpa_onnx; \
+from telescribe.web.app import _templates_dir; \
+p = _templates_dir() / 'dashboard.html'; \
+assert p.is_file(), p; \
+print('ok dashboard', p); \
+print('ok faster_whisper', faster_whisper.__file__); \
+print('ok moonshine', moonshine_voice.__file__); \
+print('ok sherpa_onnx', sherpa_onnx.__file__)"
 
 VOLUME ["/data"]
 EXPOSE 8180
