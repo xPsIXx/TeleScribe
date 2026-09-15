@@ -55,7 +55,13 @@
         .badge-gpu { background: rgba(34,197,94,0.15); color: #4ade80; }
         .badge-latency { background: rgba(251,191,36,0.15); color: #fbbf24; }
         .badge-lang { background: rgba(168,85,247,0.15); color: #c084fc; }
-        .section-card { @apply glass rounded-xl p-5; }
+        .section-card {
+            background: rgba(35, 37, 65, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+        }
         .section-title { font-size: 0.75rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 1rem; }
         label { font-size: 0.8125rem; font-weight: 500; color: #9ca3af; margin-bottom: 0.375rem; display: block; }
         .range-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: #2d2f4a; outline: none; }
@@ -68,7 +74,7 @@
         .log-line { display: flex; gap: 0.5rem; padding: 0.0625rem 0; }
         .log-level { font-weight: 600; min-width: 4.5rem; flex-shrink: 0; }
         .log-level.INFO { color: #22c55e; }
-        .log-level.WARN { color: #f59e0b; }
+        .log-level.WARN, .log-level.WARNING { color: #f59e0b; }
         .log-level.ERROR { color: #ef4444; }
         .log-level.DEBUG { color: #6b7280; }
         .log-msg { color: #d1d5db; word-break: break-word; }
@@ -125,7 +131,7 @@
             </h2>
 
             <!-- Engine Cards -->
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6" id="engineCards">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3" id="engineCards">
                 <div class="engine-card" data-engine="local" onclick="selectEngine('local')">
                     <div class="engine-name">faster-whisper</div>
                     <div class="engine-sub">Local GPU/CPU</div>
@@ -148,7 +154,7 @@
                     <div class="engine-sub">NVIDIA NeMo</div>
                     <div class="engine-badges">
                         <span class="engine-badge badge-cpu">CPU</span>
-                        <span class="engine-badge badge-latency">6.3% WER</span>
+                        <span class="engine-badge badge-latency">TDT 0.6B</span>
                     </div>
                 </div>
             </div>
@@ -169,6 +175,7 @@
                 .engine-sub { font-size: 0.65rem; color: #6b7280; margin-top: 0.125rem; margin-bottom: 0.375rem; }
                 .engine-badges { display: flex; flex-wrap: wrap; gap: 0.25rem; justify-content: center; }
             </style>
+            <p class="text-xs text-muted mb-6" id="engineHint">Pick an engine, then a model. Options below change with the engine.</p>
 
             <!-- Engine-specific settings row -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -177,17 +184,18 @@
                     <div class="grid grid-cols-2 gap-3">
                         <div id="deviceGroup">
                             <label>Device</label>
-                            <select id="device" class="input-field" onchange="updateComputeOptions(this.value)">
-                                <option value="cpu">CPU</option>
-                                <option value="cuda">GPU (CUDA)</option>
+                            <select id="device" class="input-field" data-saved="{{ config.transcription.device }}" onchange="this.dataset.saved=this.value; updateComputeOptions(this.value)">
+                                <option value="cpu" {% if config.transcription.device == 'cpu' %}selected{% endif %}>CPU</option>
+                                <option value="cuda" {% if config.transcription.device == 'cuda' %}selected{% endif %}>GPU (CUDA)</option>
                             </select>
                         </div>
                         <div id="computeGroup">
                             <label>Compute Type</label>
-                            <select id="computeType" class="input-field">
-                                <option value="int8">int8 (fast, low memory)</option>
-                                <option value="float16">float16 (balanced)</option>
-                                <option value="float32">float32 (accurate)</option>
+                            <select id="computeType" class="input-field" data-saved="{{ config.transcription.compute_type }}">
+                                <option value="int8" {% if config.transcription.compute_type == 'int8' %}selected{% endif %}>int8 (fast, low memory)</option>
+                                <option value="float16" {% if config.transcription.compute_type == 'float16' %}selected{% endif %}>float16 (balanced)</option>
+                                <option value="float32" {% if config.transcription.compute_type == 'float32' %}selected{% endif %}>float32 (accurate)</option>
+                                <option value="int8_float16" {% if config.transcription.compute_type == 'int8_float16' %}selected{% endif %}>int8_float16 (mixed)</option>
                             </select>
                         </div>
                         <div id="beamGroup">
@@ -207,19 +215,6 @@
                         <label>Initial Prompt <span class="text-xs text-muted">— bias transcription toward specific words/phrases</span></label>
                         <textarea id="initialPrompt" class="input-field" rows="2" placeholder="e.g. model names, jargon, proper nouns..." style="resize: vertical;">{{ config.transcription.initial_prompt or '' }}</textarea>
                         <span class="text-xs text-muted">Helps fix recurring transcription mistakes. Leave empty to disable.</span>
-                    </div>
-
-                    <!-- Moonshine-specific settings (hidden for other engines) -->
-                    <div id="moonshineSettings" class="hidden p-3 rounded-lg border border-purple-900/30 bg-purple-900/5">
-                        <div class="text-xs font-semibold text-purple-400 mb-2 flex items-center gap-1.5">
-                            <span>🌙</span> Moonshine Options
-                        </div>
-                        <label class="text-xs">Language model variant</label>
-                        <select id="moonshineArch" class="input-field text-sm">
-                            <option value="">Automatic (recommended)</option>
-                            <option value="0">Base (tiny)</option>
-                            <option value="1">Small</option>
-                        </select>
                     </div>
 
                     <!-- Advanced Decoding Settings (only for local engine) -->
@@ -272,6 +267,29 @@
                                             <input id="conditionOnPrev" type="checkbox" class="w-4 h-4 rounded border-gray-600 bg-surface text-accent" {{ 'checked' if config.transcription.condition_on_previous_text else '' }}>
                                             <label class="mb-0 cursor-pointer">Context Across Segs</label>
                                         </div>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-muted -mt-2">Leave "Context Across Segs" off — on distil models it cuts transcription after silence.</div>
+                                <div class="border-t border-gray-700/50 pt-3">
+                                    <div class="text-xs font-semibold text-accent mb-2">VAD padding</div>
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <div>
+                                            <label>Min silence (ms)</label>
+                                            <input id="vadMinSilence" type="number" min="200" max="4000" step="50" class="input-field" value="{{ config.transcription.vad_min_silence_ms or 700 }}">
+                                        </div>
+                                        <div>
+                                            <label>Speech pad (ms)</label>
+                                            <input id="vadSpeechPad" type="number" min="0" max="1000" step="50" class="input-field" value="{{ config.transcription.vad_speech_pad_ms or 400 }}">
+                                        </div>
+                                        <div>
+                                            <label>VAD threshold</label>
+                                            <input id="vadThreshold" type="number" min="0.1" max="0.9" step="0.05" class="input-field" value="{{ config.transcription.vad_threshold or 0.45 }}">
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <label>Hallucination silence (s)</label>
+                                        <input id="hallucinationSilence" type="number" min="0" max="10" step="0.5" class="input-field" value="{{ config.transcription.hallucination_silence_threshold or 2.0 }}">
+                                        <span class="text-xs text-muted">Skip hallucinated silence, keep later speech. 0 = off.</span>
                                     </div>
                                 </div>
                                 <!-- Divider -->
@@ -397,8 +415,12 @@
                             <input type="checkbox" id="authReply" class="w-4 h-4 accent-accent" {% if config.bot.auth_required_reply %}checked{% endif %}>
                             <span class="text-sm font-medium">/reply command</span>
                         </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="authTranscribe" class="w-4 h-4 accent-accent" {% if config.bot.auth_required_transcribe %}checked{% endif %}>
+                            <span class="text-sm font-medium">/transcribe command</span>
+                        </label>
                     </div>
-                    <div class="text-xs text-muted mt-2">Voice transcription is always available to everyone. Authorized users can use /summarize and /reply commands in the group.</div>
+                    <div class="text-xs text-muted mt-2">Voice transcription is always available to everyone. Authorized users can use /summarize, /reply, and /transcribe.</div>
                 </div>
             </div>
         </div>
@@ -424,10 +446,10 @@
                     <span class="text-sm font-medium">"📝 Transcription:" header</span>
                     <span class="text-xs text-muted ml-auto">Prefix transcription text</span>
                 </label>
-                <label class="flex items-center gap-2 cursor-pointer">
+                <label id="vadFilterRow" class="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" id="vadFilter" class="w-4 h-4 accent-accent" {% if config.transcription.vad_filter %}checked{% endif %}>
                     <span class="text-sm font-medium">VAD filter</span>
-                    <span class="text-xs text-muted ml-auto">Filter silence before transcribing</span>
+                    <span class="text-xs text-muted ml-auto">Whisper only. Off = transcribe the full clip, including pauses</span>
                 </label>
             </div>
         </div>
@@ -482,6 +504,7 @@
                     <button class="log-filter-btn" data-level="INFO" onclick="setLogLevel(this)">INFO</button>
                     <button class="log-filter-btn" data-level="WARN" onclick="setLogLevel(this)">WARN</button>
                     <button class="log-filter-btn" data-level="ERROR" onclick="setLogLevel(this)">ERROR</button>
+                    <button class="log-filter-btn" data-level="FAILURE" onclick="setLogLevel(this)">Failures</button>
                     <button class="log-filter-btn" data-level="DEBUG" onclick="setLogLevel(this)">DEBUG</button>
                 </div>
                 <input id="logSearch" class="input-field flex-1 min-w-[120px] text-xs py-1.5" placeholder="🔍 Search logs..." oninput="onLogSearch()">
@@ -510,10 +533,20 @@
         let modelData = null;
         let currentModel = '{{ config.transcription.model }}';
 
+        const ENGINE_HINTS = {
+            local: 'faster-whisper — local models. Device, compute, language, VAD, and advanced decoding apply here.',
+            moonshine: 'Moonshine — pick a language in the Model dropdown, then Download. CPU only. Language field and Whisper decoding options are hidden.',
+            parakeet: 'Parakeet TDT 0.6B v2 — English, CPU. One model. Whisper/Moonshine options are hidden.',
+        };
+        const ENGINE_DEVICES = {
+            local: ['cpu', 'cuda'],
+            moonshine: ['cpu'],
+            parakeet: ['cpu'],
+        };
+
         // ====== Init ======
         async function init() {
             await loadModels();
-            // Select current engine card
             const engine = document.getElementById('engineDisplay').textContent.trim();
             selectEngine(engine);
             loadHistoryStats();
@@ -525,7 +558,9 @@
             const card = document.querySelector(`.engine-card[data-engine="${engine}"]`);
             if (card) card.classList.add('active');
 
-            const devices = (modelData && modelData.engine_devices[engine]) || [];
+            const devices = (modelData && modelData.engine_devices && modelData.engine_devices[engine])
+                || ENGINE_DEVICES[engine]
+                || ['cpu'];
             const deviceSel = document.getElementById('device');
             const deviceGroup = document.getElementById('deviceGroup');
             const computeGroup = document.getElementById('computeGroup');
@@ -534,46 +569,60 @@
             const advancedSettings = document.getElementById('advancedSettings');
             const languageGroup = document.getElementById('languageGroup');
             const modelNote = document.getElementById('modelNote');
-            const moonshineSettings = document.getElementById('moonshineSettings');
+            const vadRow = document.getElementById('vadFilterRow');
+            const hint = document.getElementById('engineHint');
+            const isLocal = engine === 'local';
 
-            // Device handling
-            if (devices.length === 0) {
-                deviceGroup.style.display = 'none';
+            if (hint) hint.textContent = ENGINE_HINTS[engine] || '';
+
+            if (isLocal) {
+                deviceGroup.style.display = 'block';
+                deviceSel.disabled = false;
+                const saved = deviceSel.dataset.saved || 'cpu';
+                deviceSel.innerHTML = devices.map(d =>
+                    `<option value="${d}" ${d === saved ? 'selected' : ''}>${d === 'cuda' ? 'GPU (CUDA)' : d.toUpperCase()}</option>`
+                ).join('');
+                if (![...deviceSel.options].some(o => o.value === deviceSel.value)) {
+                    deviceSel.value = devices[0];
+                }
+                computeGroup.style.display = 'block';
+                beamGroup.style.display = 'block';
+                advancedSettings.style.display = 'block';
+                initialPromptGroup.style.display = 'block';
+                languageGroup.style.display = 'block';
+                if (vadRow) vadRow.style.display = 'flex';
+                updateComputeOptions(deviceSel.value);
+            } else {
+                deviceGroup.style.display = 'block';
+                deviceSel.innerHTML = `<option value="cpu" selected>CPU</option>`;
+                deviceSel.disabled = true;
                 computeGroup.style.display = 'none';
                 beamGroup.style.display = 'none';
                 advancedSettings.style.display = 'none';
                 initialPromptGroup.style.display = 'none';
-            } else if (devices.length === 1) {
-                deviceGroup.style.display = 'block';
-                deviceSel.innerHTML = `<option value="${devices[0]}" selected>${devices[0].toUpperCase()}</option>`;
-                deviceSel.disabled = true;
-                computeGroup.style.display = engine === 'local' ? 'block' : 'none';
-                beamGroup.style.display = engine === 'local' ? 'block' : 'none';
-                advancedSettings.style.display = engine === 'local' ? 'block' : 'none';
-                initialPromptGroup.style.display = engine === 'local' ? 'block' : 'none';
-                updateComputeOptions(devices[0]);
-            } else {
-                deviceGroup.style.display = 'block';
-                deviceSel.disabled = false;
-                deviceSel.innerHTML = devices.map(d => `<option value="${d}">${d.toUpperCase()}</option>`).join('');
-                computeGroup.style.display = 'block';
-                beamGroup.style.display = engine === 'local' ? 'block' : 'none';
-                advancedSettings.style.display = engine === 'local' ? 'block' : 'none';
-                initialPromptGroup.style.display = engine === 'local' ? 'block' : 'none';
-                updateComputeOptions(deviceSel.value);
+                languageGroup.style.display = 'none';
+                if (vadRow) vadRow.style.display = 'none';
             }
 
-            // Language
-            languageGroup.style.display = engine === 'local' || engine === 'moonshine' ? 'block' : 'none';
+            modelNote.textContent = isLocal || engine === 'moonshine' || engine === 'parakeet'
+                ? 'Select a model → click Download if needed'
+                : 'Uses API provider default';
 
-            // Moonshine-specific
-            moonshineSettings.style.display = engine === 'moonshine' ? 'block' : 'none';
+            if (modelData) {
+                const models = modelData.engine_models[engine] || [];
+                const ids = models.map(m => m.id);
+                if (ids.length && !ids.includes(currentModel)) {
+                    const recommended = models.find(m => /recommended/i.test(m.label || ''));
+                    currentModel = (recommended || models[0]).id;
+                }
+            }
 
-            // Model note
-            const remote = ['openai', 'groq', 'custom'];
-            modelNote.textContent = remote.includes(engine)
-                ? 'Uses API provider default'
-                : 'Select a model → click Download if needed';
+            const engineDisplay = document.getElementById('engineDisplay');
+            const modelDisplay = document.getElementById('modelDisplay');
+            const deviceDisplay = document.getElementById('deviceDisplay');
+            if (engineDisplay) engineDisplay.textContent = engine;
+            if (modelDisplay) modelDisplay.textContent = currentModel || '—';
+            if (deviceDisplay) deviceDisplay.textContent = deviceSel.value;
 
             renderModelDropdown();
         }
@@ -581,7 +630,7 @@
         // ====== Compute Type Filtering ======
         function updateComputeOptions(device) {
             const sel = document.getElementById('computeType');
-            const current = sel.value;
+            const current = sel.dataset.saved || sel.value;
             const cpuOptions = [
                 {value: 'int8', label: 'int8 (fast, low memory)'},
                 {value: 'float32', label: 'float32 (accurate)'},
@@ -596,10 +645,10 @@
             sel.innerHTML = options.map(o =>
                 `<option value="${o.value}" ${o.value === current ? 'selected' : ''}>${o.label}</option>`
             ).join('');
-            // If current selection is no longer valid, default to int8
             if (!options.find(o => o.value === current)) {
                 sel.value = 'int8';
             }
+            sel.dataset.saved = sel.value;
         }
 
         // ====== Model Dropdown ======
@@ -646,6 +695,8 @@
         function onModelChange() {
             const sel = document.getElementById('modelSelect');
             currentModel = sel.value;
+            const md = document.getElementById('modelDisplay');
+            if (md) md.textContent = currentModel || '—';
             if (currentModel && modelData) {
                 const engine = document.querySelector('.engine-card.active')?.dataset.engine || 'local';
                 const models = modelData.engine_models[engine] || [];
@@ -775,55 +826,6 @@
                         showToast('❌ Download failed: ' + (s.error || ''), 'error');
                         loadModels();
                     } else {
-                        // Update progress in real-time
-                        const model = modelData?.engine_models?.[document.querySelector('.engine-card.active')?.dataset.engine]?.find(m => m.id === modelId);
-                        if (model) {
-                            model.progress = s.progress;
-                            model.status = 'downloading';
-                            updateModelStatus(model);
-                        }
-                    }
-                } catch (e) { clearInterval(interval); }
-            }, 500);
-        }
-
-        // ====== Download ======
-        async function downloadModel(modelId, engine) {
-            try {
-                const res = await fetch('/api/download-model', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({model_id: modelId, engine: engine}),
-                });
-                const data = await res.json();
-                if (data.status === 'started') {
-                    showToast('⏳ Downloading model...', 'info');
-                    pollDownloadStatus(modelId);
-                } else {
-                    showToast('❌ ' + (data.message || 'Download failed'), 'error');
-                }
-            } catch (e) {
-                showToast('❌ ' + e.message, 'error');
-            }
-        }
-
-        function pollDownloadStatus(modelId) {
-            const interval = setInterval(async () => {
-                try {
-                    const res = await fetch('/api/download-status');
-                    const data = await res.json();
-                    const s = data.downloads[modelId];
-                    if (!s) { clearInterval(interval); return; }
-                    if (s.status === 'done') {
-                        clearInterval(interval);
-                        showToast('✅ Model downloaded!', 'success');
-                        loadModels();
-                    } else if (s.status === 'error') {
-                        clearInterval(interval);
-                        showToast('❌ Download failed: ' + (s.error || ''), 'error');
-                        loadModels();
-                    } else {
-                        // Update progress in real-time
                         const engine = document.querySelector('.engine-card.active')?.dataset.engine || 'local';
                         const model = modelData?.engine_models?.[engine]?.find(m => m.id === modelId);
                         if (model) {
@@ -864,6 +866,10 @@
                 show_transcribing_feedback: document.getElementById('showFeedback').checked,
                 show_transcription_header: document.getElementById('showHeader').checked,
                 vad_filter: document.getElementById('vadFilter').checked,
+                vad_min_silence_ms: parseInt(document.getElementById('vadMinSilence')?.value) || 700,
+                vad_speech_pad_ms: parseInt(document.getElementById('vadSpeechPad')?.value) || 400,
+                vad_threshold: parseFloat(document.getElementById('vadThreshold')?.value) || 0.45,
+                hallucination_silence_threshold: parseFloat(document.getElementById('hallucinationSilence')?.value) || 2.0,
                 no_speech_threshold: parseFloat(document.getElementById('noSpeechThreshold').value) || null,
                 log_prob_threshold: parseFloat(document.getElementById('logProbThreshold').value) || null,
                 compression_ratio_threshold: parseFloat(document.getElementById('compressionRatioThreshold').value) || null,
@@ -871,6 +877,7 @@
                 authorized_users: document.getElementById('authorizedUsers').value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
                 auth_required_summarize: document.getElementById('authSummarize').checked,
                 auth_required_reply: document.getElementById('authReply').checked,
+                auth_required_transcribe: document.getElementById('authTranscribe').checked,
                 summary_prompt: document.getElementById('summaryPrompt').value,
                 reply_prompt: document.getElementById('replyPrompt').value,
                 retention_days: parseInt(document.getElementById('retentionDays').value),
@@ -1003,7 +1010,7 @@
                         const time = match[1];
                         const level = match[3];
                         const msg = match[4];
-                        const levelClass = ['INFO','WARN','ERROR','DEBUG'].includes(level) ? level : 'INFO';
+                        const levelClass = ['INFO','WARN','WARNING','ERROR','DEBUG','CRITICAL'].includes(level) ? (level === 'WARNING' ? 'WARN' : level) : 'INFO';
                         return `<div class="log-line"><span class="log-time">${time}</span><span class="log-level ${levelClass}">${level}</span><span class="log-msg">${escapeHtml(msg)}</span></div>`;
                     }
                     return `<div class="log-line"><span class="log-msg">${escapeHtml(line)}</span></div>`;

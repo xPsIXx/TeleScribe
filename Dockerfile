@@ -22,12 +22,9 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 COPY .gitignore ./
 
-# Install core dependencies
+# Install core + engine dependencies (fail the build if engines cannot install)
 RUN uv sync --no-dev --no-editable
-
-# Install optional engine dependencies (best-effort, may fail)
-RUN uv pip install moonshine-voice 2>/dev/null || true
-RUN uv pip install sherpa-onnx 2>/dev/null || true
+RUN uv pip install moonshine-voice sherpa-onnx
 
 VOLUME ["/data"]
 EXPOSE 8180

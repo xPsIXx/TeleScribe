@@ -4,7 +4,7 @@
 bot:
   privacy_mode: true
   admin_user_ids: []
-  authorized_users: "*"
+  authorized_users: []
 
   # Default prompts (overridable per-user)
   prompts:
@@ -22,12 +22,17 @@ bot:
       Please process it as if the user typed it directly.
 
 transcription:
-  engine: local  # local, openai, groq, custom
-  model: distil-medium.en
+  engine: local  # local, moonshine, parakeet
+  model: distil-large-v3
   device: cpu    # cpu, cuda
   compute_type: int8
   beam_size: 5
+  condition_on_previous_text: false
   vad_filter: false
+  vad_min_silence_ms: 700
+  vad_speech_pad_ms: 400
+  vad_threshold: 0.45
+  hallucination_silence_threshold: 2.0
   language: null  # null = auto-detect
 
 llm:

@@ -12,6 +12,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_CONFIG_PATH = Path(os.getenv("TALKSCRIBE_CONFIG_PATH", "/opt/data/projects/telescribe/data/config.yaml"))
 
+# Old Parakeet 110M CTC model id — auto-migrated to TDT 0.6B v2.
+_LEGACY_PARAKEET_MODELS = {
+    "sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000-int8",
+}
+
+PARAKEET_TDT_V2 = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+
 
 class PromptsConfig(BaseSettings):
     summary: str = (
@@ -25,7 +32,7 @@ class PromptsConfig(BaseSettings):
 
 class TranscriptionConfig(BaseSettings):
     engine: Literal["local", "moonshine", "parakeet"] = "local"
-    model: str = "distil-medium.en"
+    model: str = "distil-large-v3"
     device: Literal["cpu", "cuda"] = "cpu"
     compute_type: str = "int8"
     beam_size: int = 5
@@ -36,13 +43,20 @@ class TranscriptionConfig(BaseSettings):
     repetition_penalty: float = 1.0
     no_repeat_ngram_size: int = 0
     suppress_blank: bool = True
-    condition_on_previous_text: bool = True
+    condition_on_previous_text: bool = False
     vad_filter: bool = False
+    vad_min_silence_ms: int = 700
+    vad_speech_pad_ms: int = 400
+    vad_threshold: float = 0.45
+    hallucination_silence_threshold: float = 2.0
     no_speech_threshold: Optional[float] = None
     log_prob_threshold: Optional[float] = None
     compression_ratio_threshold: Optional[float] = None
     initial_prompt: Optional[str] = None
     language: Optional[str] = None
+    # Bumped once when we disabled previous-text conditioning. Do not re-apply
+    # that migration on later loads — the user may turn the option back on.
+    asr_defaults_version: int = 2
 
 
 class LLMConfig(BaseSettings):
@@ -77,6 +91,7 @@ class BotConfig(BaseSettings):
     show_transcription_header: bool = True
     auth_required_summarize: bool = True
     auth_required_reply: bool = True
+    auth_required_transcribe: bool = True
 
 
 class AppConfig(BaseSettings):
@@ -104,16 +119,44 @@ class AppConfig(BaseSettings):
         path = Path(path) if path else DEFAULT_CONFIG_PATH
 
         yaml_exists = path.exists()
+        migrated = False
         if yaml_exists:
             with open(path) as f:
                 raw = yaml.safe_load(f) or {}
             # Migrate old format: authorized_users was a string "*" but is now a list
             if isinstance(raw.get("bot", {}).get("authorized_users"), str):
-                raw["bot"]["authorized_users"] = []
+                raw.setdefault("bot", {})["authorized_users"] = []
+                migrated = True
             # Strip removed fields that may exist in old config files
             raw.get("bot", {}).pop("auth_required_callback", None)
             raw.pop("_dashboard_managed", None)  # legacy field, no longer used
+
+            tx = raw.get("transcription") or {}
+            if isinstance(tx, dict):
+                # One-shot: disable previous-text conditioning that caused
+                # silence cutoffs. Later loads respect the user's checkbox.
+                if int(tx.get("asr_defaults_version") or 0) < 2:
+                    tx["condition_on_previous_text"] = False
+                    tx["asr_defaults_version"] = 2
+                    migrated = True
+                if tx.get("engine") == "parakeet" and str(tx.get("model") or "") in _LEGACY_PARAKEET_MODELS:
+                    tx["model"] = PARAKEET_TDT_V2
+                    migrated = True
+                tx.setdefault("vad_min_silence_ms", 700)
+                tx.setdefault("vad_speech_pad_ms", 400)
+                tx.setdefault("vad_threshold", 0.45)
+                tx.setdefault("hallucination_silence_threshold", 2.0)
+                raw["transcription"] = tx
+
+            bot = raw.get("bot") or {}
+            if isinstance(bot, dict) and "auth_required_transcribe" not in bot:
+                bot["auth_required_transcribe"] = bot.get("auth_required_summarize", True)
+                raw["bot"] = bot
+                migrated = True
+
             base = cls.model_validate(raw)
+            if migrated:
+                base.save(path)
         else:
             # Create default config if it doesn't exist
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -165,7 +208,12 @@ class AppConfig(BaseSettings):
         if llm_model:
             base.llm.model = llm_model
 
-        data_dir = os.getenv("DATA_DIR", "")
+        data_dir = (
+            os.getenv("DATA_DIR")
+            or os.getenv("TELESCRIBE_DATA_DIR")
+            or os.getenv("TALKSCRIBE_DATA_DIR")
+            or ""
+        )
         if data_dir:
             base.data_dir = data_dir
 
@@ -188,6 +236,7 @@ class AppConfig(BaseSettings):
                 "show_transcription_header": self.bot.show_transcription_header,
                 "auth_required_summarize": self.bot.auth_required_summarize,
                 "auth_required_reply": self.bot.auth_required_reply,
+                "auth_required_transcribe": self.bot.auth_required_transcribe,
                 "prompts": {
                     "summary": self.bot.prompts.summary,
                     "reply": self.bot.prompts.reply,
@@ -209,11 +258,16 @@ class AppConfig(BaseSettings):
                 "suppress_blank": self.transcription.suppress_blank,
                 "condition_on_previous_text": self.transcription.condition_on_previous_text,
                 "vad_filter": self.transcription.vad_filter,
+                "vad_min_silence_ms": self.transcription.vad_min_silence_ms,
+                "vad_speech_pad_ms": self.transcription.vad_speech_pad_ms,
+                "vad_threshold": self.transcription.vad_threshold,
+                "hallucination_silence_threshold": self.transcription.hallucination_silence_threshold,
                 "no_speech_threshold": self.transcription.no_speech_threshold,
                 "log_prob_threshold": self.transcription.log_prob_threshold,
                 "compression_ratio_threshold": self.transcription.compression_ratio_threshold,
                 "initial_prompt": self.transcription.initial_prompt,
                 "language": self.transcription.language,
+                "asr_defaults_version": self.transcription.asr_defaults_version,
             },
             "llm": {
                 "base_url": self.llm.base_url,

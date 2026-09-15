@@ -29,7 +29,7 @@ from telegram.ext import (
 
 from telescribe.config import AppConfig
 from telescribe.history import MessageStore
-from telescribe.logger import get_logger
+from telescribe.logger import get_logger, log_failure
 from telescribe.transcriber import BaseTranscriber, create_transcriber
 
 logger = get_logger("bot")
@@ -37,15 +37,34 @@ logger = get_logger("bot")
 # Reload coordination — set by web dashboard, consumed by bot
 _reload_requested = False
 
+TELEGRAM_MSG_LIMIT = 3500
+
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log errors from the bot."""
-    logger.error("Unhandled error: %s", context.error, exc_info=context.error)
+    """Log unhandled handler errors with chat/user context."""
+    user_id = None
+    chat_id = None
+    update_id = None
+    if update:
+        update_id = getattr(update, "update_id", None)
+        if update.effective_user:
+            user_id = update.effective_user.id
+        if update.effective_chat:
+            chat_id = update.effective_chat.id
+    log_failure(
+        logger,
+        "telegram.handler",
+        context.error if isinstance(context.error, BaseException) else None,
+        update_id=update_id,
+        chat=chat_id,
+        user=user_id,
+        error=context.error if not isinstance(context.error, BaseException) else None,
+    )
     if update and update.effective_message:
         try:
             await update.effective_message.reply_text("❌ An internal error occurred.")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not send error reply: %s", e)
 
 
 def format_messages_for_summary(messages: list[dict]) -> str:
@@ -60,6 +79,28 @@ def format_messages_for_summary(messages: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _chunk_text(text: str, limit: int = TELEGRAM_MSG_LIMIT) -> list[str]:
+    """Split text so each piece fits in a Telegram message."""
+    if not text:
+        return [""]
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    rest = text
+    while rest:
+        if len(rest) <= limit:
+            chunks.append(rest)
+            break
+        cut = rest.rfind("\n", 0, limit)
+        if cut < limit // 2:
+            cut = rest.rfind(" ", 0, limit)
+        if cut < limit // 2:
+            cut = limit
+        chunks.append(rest[:cut])
+        rest = rest[cut:].lstrip()
+    return chunks
+
+
 class TalkscribeBot:
     """The main bot class."""
 
@@ -69,6 +110,7 @@ class TalkscribeBot:
         self.store = store
         self._app: Optional[Application] = None
         self._llm_client: Optional = None
+        self._asr_lock = asyncio.Lock()
         logger.info("Bot instance created")
 
     def _get_llm_client(self):
@@ -95,12 +137,26 @@ class TalkscribeBot:
 
     async def _download_audio(self, file_id: str) -> tuple[bytes, str]:
         """Download a file from Telegram, return (data, mime_type)."""
-        file = await self._app.bot.get_file(file_id)
-        data = await file.download_as_bytearray()
+        try:
+            file = await self._app.bot.get_file(file_id)
+            data = await file.download_as_bytearray()
+        except Exception as e:
+            log_failure(logger, "telegram.download", e, file_id=file_id[:24] if file_id else "")
+            raise
         mime_type = file.file_path.split(".")[-1] if file.file_path else "ogg"
-        mime_map = {"oga": "audio/ogg", "ogg": "audio/ogg", "mp3": "audio/mpeg", "mp4": "audio/mp4",
-                     "m4a": "audio/mp4", "wav": "audio/wav", "webm": "audio/webm"}
-        return bytes(data), mime_map.get(mime_type, "audio/ogg")
+        mime_map = {
+            "oga": "audio/ogg",
+            "ogg": "audio/ogg",
+            "mp3": "audio/mpeg",
+            "mp4": "video/mp4",
+            "m4a": "audio/mp4",
+            "wav": "audio/wav",
+            "webm": "audio/webm",
+            "mov": "video/mp4",
+        }
+        mapped = mime_map.get(mime_type, "audio/ogg")
+        logger.info("Downloaded Telegram file file_id=%s bytes=%d ext=%s mime=%s", file_id[:20], len(data), mime_type, mapped)
+        return bytes(data), mapped
 
     async def _send_private(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, reply_markup=None) -> None:
         """Send a message visible only to the requesting user.
@@ -114,26 +170,34 @@ class TalkscribeBot:
         """
         safe_text = self._escape_markdown(text) if text.startswith("❌") or text.startswith("⚠️") else text
 
-        if self.config.bot.privacy_mode and update.effective_chat.type in (
-            constants.ChatType.GROUP, constants.ChatType.SUPERGROUP
-        ):
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=safe_text,
-                api_kwargs={"ephemeral_message_parameters": {"receiver_user_id": update.effective_user.id}},
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup,
-            )
-        else:
-            await update.message.reply_text(
-                text=safe_text,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup,
-            )
+        for chunk in _chunk_text(safe_text):
+            try:
+                if self.config.bot.privacy_mode and update.effective_chat.type in (
+                    constants.ChatType.GROUP, constants.ChatType.SUPERGROUP
+                ):
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=chunk,
+                        api_kwargs={"ephemeral_message_parameters": {"receiver_user_id": update.effective_user.id}},
+                        parse_mode=ParseMode.MARKDOWN,
+                        reply_markup=reply_markup,
+                    )
+                else:
+                    await update.message.reply_text(
+                        text=chunk,
+                        parse_mode=ParseMode.MARKDOWN,
+                        reply_markup=reply_markup,
+                    )
+            except Exception as e:
+                logger.warning("Private send failed parse_mode=markdown: %s — retrying plain text", e)
+                try:
+                    await update.message.reply_text(text=chunk, reply_markup=reply_markup)
+                except Exception as e2:
+                    log_failure(logger, "telegram.private_send", e2, chat=update.effective_chat.id if update.effective_chat else None)
 
     def _escape_markdown(self, text: str) -> str:
         """Escape Telegram markdown special characters in text."""
-        special = set('_*[]()~`>#+-=|{}.!')
+        special = set('_*`[')
         bs = chr(92)
         result = []
         for ch in text:
@@ -142,6 +206,22 @@ class TalkscribeBot:
             else:
                 result.append(ch)
         return ''.join(result)
+
+    async def _send_chunks(self, message, text: str, parse_mode: str | None = ParseMode.MARKDOWN) -> None:
+        """Send text in Telegram-sized chunks. Fall back to plain text if markdown is rejected."""
+        for i, chunk in enumerate(_chunk_text(text)):
+            try:
+                await message.reply_text(text=chunk, parse_mode=parse_mode)
+            except Exception as e:
+                logger.warning(
+                    "Telegram send failed chunk=%d parse_mode=%s chars=%d: %s — retrying plain text",
+                    i, parse_mode, len(chunk), e,
+                )
+                try:
+                    await message.reply_text(text=chunk)
+                except Exception as e2:
+                    log_failure(logger, "telegram.send", e2, chunk=i, chars=len(chunk))
+                    raise
 
     # ---- Command Handlers ----
 
@@ -178,20 +258,47 @@ class TalkscribeBot:
 
         voice = message.voice or message.audio
         document = message.document
+        video = message.video_note or message.video
         file_id = None
         mime_type = "audio/ogg"
+        kind = "file"
+        duration = "?"
 
         if voice:
             file_id = voice.file_id
             mime_type = "audio/ogg"
-            logger.info("Voice msg from user %s: duration=%ss, file_id=%s", user_id, getattr(voice, 'duration', '?'), file_id[:20])
-        elif document and document.mime_type and document.mime_type.startswith("audio/"):
+            kind = "voice"
+            duration = getattr(voice, "duration", "?")
+        elif video:
+            file_id = video.file_id
+            mime_type = "video/mp4"
+            kind = "video"
+            duration = getattr(video, "duration", "?")
+        elif document and document.mime_type and (
+            document.mime_type.startswith("audio/") or document.mime_type.startswith("video/")
+        ):
             file_id = document.file_id
             mime_type = document.mime_type
-            logger.info("Audio file from user %s: mime=%s, file_id=%s", user_id, mime_type, file_id[:20])
+            kind = "file"
 
         if not file_id:
+            logger.debug("handle_voice skipped — no audio/video file_id msg=%s", message.message_id)
             return
+
+        engine = self.config.transcription.engine
+        model = self.config.transcription.model
+        logger.info(
+            "ASR job queued chat=%s user=%s msg=%s engine=%s model=%s kind=%s duration=%s mime=%s file_id=%s",
+            update.effective_chat.id,
+            user_id,
+            message.message_id,
+            engine,
+            model,
+            kind,
+            duration,
+            mime_type,
+            file_id[:20],
+        )
 
         # Store message in history with file_id BEFORE transcribing
         # so that if transcription fails, /transcribe can retry the backlog.
@@ -212,19 +319,28 @@ class TalkscribeBot:
 
         try:
             start_t = time.perf_counter()
-            audio_data, mime = await self._download_audio(file_id)
-            logger.debug("Audio downloaded: %d bytes, type=%s", len(audio_data), mime)
-
-            result = await self.transcriber.transcribe(audio_data, mime)
+            audio_data = b""
+            mime = mime_type
+            async with self._asr_lock:
+                audio_data, mime = await self._download_audio(file_id)
+                result = await self.transcriber.transcribe(audio_data, mime)
             elapsed = time.perf_counter() - start_t
 
             if not result.text or result.text == "(no speech detected)":
-                logger.warning("Transcription returned empty text for user %s", user_id)
+                logger.warning(
+                    "ASR empty result chat=%s user=%s msg=%s engine=%s model=%s bytes=%d elapsed=%.1fs",
+                    update.effective_chat.id, user_id, message.message_id, engine, model,
+                    len(audio_data), elapsed,
+                )
                 if self.config.bot.show_transcribing_feedback:
                     await self._send_private(update, context, "⚠️ Could not transcribe that audio.")
                 return
 
-            logger.info("Transcription OK: %d chars, %0.1fs total (lang=%s)", len(result.text), elapsed, result.language)
+            logger.info(
+                "Transcription OK chat=%s user=%s msg=%s chars=%d lang=%s elapsed=%.1fs engine=%s model=%s",
+                update.effective_chat.id, user_id, message.message_id,
+                len(result.text), result.language, elapsed, engine, model,
+            )
 
             # Store in history with transcription (replied=0, summarized=0 by default)
             await self.store.store_message(
@@ -243,19 +359,28 @@ class TalkscribeBot:
             parts = []
             if self.config.bot.show_transcription_header:
                 parts.append("📝 *Transcription:*")
-            parts.append(result.text)
+            parts.append(self._escape_markdown(result.text))
             reply_text = "\n".join(parts)
 
-            safe_text = self._escape_markdown(reply_text) if reply_text.startswith("❌") or reply_text.startswith("⚠️") else reply_text
-            await update.message.reply_text(
-                text=safe_text,
-                parse_mode=ParseMode.MARKDOWN,
-            )
+            await self._send_chunks(update.message, reply_text)
 
         except Exception as e:
-            logger.exception("Transcription failed for user %s", user_id)
+            log_failure(
+                logger,
+                "transcription",
+                e,
+                chat=update.effective_chat.id,
+                user=user_id,
+                msg=message.message_id,
+                engine=engine,
+                model=model,
+                mime=mime_type,
+            )
             if self.config.bot.show_transcribing_feedback:
-                await self._send_private(update, context, f"❌ Transcription failed: {str(e)}")
+                try:
+                    await self._send_private(update, context, f"❌ Transcription failed: {str(e)}")
+                except Exception:
+                    logger.warning("Could not notify user of transcription failure")
 
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Store text messages in history (all users, no auth required)."""
@@ -283,7 +408,7 @@ class TalkscribeBot:
         user = update.effective_user
         if not user:
             return
-        if self.config.bot.auth_required_summarize and not self._is_authorized(user.id):
+        if self.config.bot.auth_required_transcribe and not self._is_authorized(user.id):
             logger.warning("Unauthorized user %s tried /transcribe", user.id)
             await self._send_private(update, context, "❌ You are not authorized to use this command.")
             return
@@ -315,8 +440,9 @@ class TalkscribeBot:
                     continue
 
                 try:
-                    audio_data, mime = await self._download_audio(file_id)
-                    result = await self.transcriber.transcribe(audio_data, mime)
+                    async with self._asr_lock:
+                        audio_data, mime = await self._download_audio(file_id)
+                        result = await self.transcriber.transcribe(audio_data, mime)
 
                     if result.text and result.text != "(no speech detected)":
                         # Update the DB record with the transcription
@@ -333,7 +459,7 @@ class TalkscribeBot:
                         logger.warning("Backlog transcribe empty: msg=%s", msg_id)
                 except Exception as e:
                     failed += 1
-                    logger.warning("Backlog transcribe failed for msg=%s: %s", msg_id, e)
+                    log_failure(logger, "backlog.transcribe", e, msg=msg_id, file_id=(file_id or "")[:20])
 
             await self._send_private(update, context,
                 f"✅ Done! {success} transcribed, {failed} failed."
@@ -677,7 +803,8 @@ class TalkscribeBot:
                     logger.info("Transcriber hot-reloaded: engine=%s, model=%s",
                                  self.config.transcription.engine, self.config.transcription.model)
                 except Exception as e:
-                    logger.exception("Hot-reload failed: %s", e)
+                    logger.exception("Hot-reload failed")
+                    log_failure(logger, "hot_reload", e)
 
     def run(self) -> None:
         """Run the bot with polling."""

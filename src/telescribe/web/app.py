@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from telescribe import __version__
 from telescribe.config import AppConfig
-from telescribe.logger import get_logger, get_log_file_path
+from telescribe.logger import get_logger, get_log_file_path, log_failure, line_matches_level
 
 logger = get_logger("web")
 
@@ -23,6 +23,18 @@ app = FastAPI(title="TeleScribe Dashboard")
 
 _web_dir = Path(__file__).parent
 templates = Jinja2Templates(directory=str(_web_dir / "templates"))
+
+
+@app.exception_handler(Exception)
+async def unhandled_web_error(request: Request, exc: Exception):
+    from fastapi import HTTPException
+    from fastapi.responses import JSONResponse
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    if isinstance(exc, (HTTPException, StarletteHTTPException)):
+        raise exc
+    log_failure(logger, "dashboard", exc, path=str(request.url.path), method=request.method)
+    return JSONResponse(status_code=500, content={"status": "error", "message": str(exc)})
 
 _config: AppConfig | None = None
 _bot_reload_requested = False
@@ -51,8 +63,8 @@ ENGINE_MODELS = {
         ("medium", "Medium (769M params)"),
         ("large-v3", "Large v3 (1.55B params)"),
         ("distil-small.en", "Distil Small EN (6x faster)"),
-        ("distil-medium.en", "Distil Medium EN (6x faster) — Recommended"),
-        ("distil-large-v3", "Distil Large v3 (6x faster)"),
+        ("distil-medium.en", "Distil Medium EN (6x faster)"),
+        ("distil-large-v3", "Distil Large v3 (6x faster) — Recommended"),
     ],
     "moonshine": [
         ("en", "English"),
@@ -65,7 +77,7 @@ ENGINE_MODELS = {
         ("uk", "Ukrainian"),
     ],
     "parakeet": [
-        ("sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000-int8", "Parakeet TDT 110M EN — best accuracy"),
+        ("sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8", "Parakeet TDT 0.6B v2 INT8 — recommended"),
     ],
 }
 
@@ -75,6 +87,26 @@ ENGINE_DEVICE = {
     "moonshine": ["cpu"],
     "parakeet": ["cpu"],
 }
+
+ENGINE_DEFAULT_MODEL = {
+    "local": "distil-large-v3",
+    "moonshine": "en",
+    "parakeet": "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+}
+
+
+def _valid_models_for(engine: str) -> set[str]:
+    return {mid for mid, _ in ENGINE_MODELS.get(engine, [])}
+
+
+def _coerce_engine_model(engine: str, model: str) -> tuple[str, str]:
+    """Keep engine/model pairs that each pipeline can actually load."""
+    if engine not in ENGINE_MODELS:
+        engine = "local"
+    allowed = _valid_models_for(engine)
+    if model not in allowed:
+        model = ENGINE_DEFAULT_MODEL.get(engine, next(iter(allowed), ""))
+    return engine, model
 
 
 def get_config() -> AppConfig:
@@ -142,7 +174,10 @@ def _check_model_downloaded(engine: str, model: str) -> bool:
 
     if engine == "parakeet":
         model_dir = Path(data_dir) / "models" / model
-        return model_dir.exists() and (model_dir / "tokens.txt").exists()
+        encoder = model_dir / "encoder.int8.onnx"
+        if not encoder.exists():
+            encoder = model_dir / "encoder.onnx"
+        return model_dir.exists() and (model_dir / "tokens.txt").exists() and encoder.exists()
 
     return True
 
@@ -173,17 +208,19 @@ def _get_model_paths(engine: str, model: str) -> list[Path]:
                     if candidate.is_dir():
                         paths.append(candidate)
     elif engine == "moonshine":
-        # Check /data/models/moonshine/ first, then home cache
+        # Delete only the selected language's files, not the whole cache.
         cache = Path(data_dir) / "models" / "moonshine"
         if cache.exists():
-            paths.append(cache)
-        cache = Path(os.environ.get("MOONSHINE_VOICE_CACHE", ""))
-        if not cache.exists():
-            cache = home / ".cache" / "moonshine_voice"
-        if not cache.exists():
-            cache = home / ".cache" / "moonshine"
-        if cache.exists():
-            paths.append(cache)
+            for p in cache.rglob(f"*{model}*"):
+                paths.append(p)
+        extra = Path(os.environ.get("MOONSHINE_VOICE_CACHE", ""))
+        if not extra.exists():
+            extra = home / ".cache" / "moonshine_voice"
+        if not extra.exists():
+            extra = home / ".cache" / "moonshine"
+        if extra.exists():
+            for p in extra.rglob(f"*{model}*"):
+                paths.append(p)
     elif engine == "parakeet":
         model_dir = Path(data_dir) / "models" / model
         if model_dir.exists():
@@ -255,8 +292,11 @@ def _check_model_valid(engine: str, model: str) -> bool:
         model_dir = Path(data_dir) / "models" / model
         if model_dir.exists() and (model_dir / "tokens.txt").exists():
             tok_size = (model_dir / "tokens.txt").stat().st_size
-            # Check for any large .onnx model file (not just encoder.onnx)
-            model_files = list(model_dir.glob("model*.onnx")) + list(model_dir.glob("*.onnx"))
+            model_files = (
+                list(model_dir.glob("encoder*.onnx"))
+                + list(model_dir.glob("model*.onnx"))
+                + list(model_dir.glob("*.onnx"))
+            )
             if tok_size > 100 and model_files:
                 largest = max(f.stat().st_size for f in model_files if f.is_file())
                 if largest > 1_000_000:
@@ -312,8 +352,12 @@ class ConfigUpdate(BaseModel):
     repetition_penalty: float = 1.0
     no_repeat_ngram_size: int = 0
     suppress_blank: bool = True
-    condition_on_previous_text: bool = True
+    condition_on_previous_text: bool = False
     vad_filter: bool
+    vad_min_silence_ms: int = 700
+    vad_speech_pad_ms: int = 400
+    vad_threshold: float = 0.45
+    hallucination_silence_threshold: float = 2.0
     no_speech_threshold: float | None = None
     log_prob_threshold: float | None = None
     compression_ratio_threshold: float | None = None
@@ -329,6 +373,7 @@ class ConfigUpdate(BaseModel):
     authorized_users: list[int]
     auth_required_summarize: bool
     auth_required_reply: bool
+    auth_required_transcribe: bool = True
     summary_prompt: str
     reply_prompt: str
     retention_days: int
@@ -341,9 +386,18 @@ class ConfigUpdate(BaseModel):
 async def update_config(update: ConfigUpdate):
     cfg = get_config()
     old_engine = cfg.transcription.engine
-    cfg.transcription.engine = update.engine  # type: ignore
-    cfg.transcription.model = update.model
-    cfg.transcription.device = update.device  # type: ignore
+    engine, model = _coerce_engine_model(update.engine, update.model)
+    if engine != update.engine or model != update.model:
+        logger.warning(
+            "Coerced engine/model %s/%s -> %s/%s",
+            update.engine, update.model, engine, model,
+        )
+    cfg.transcription.engine = engine  # type: ignore
+    cfg.transcription.model = model
+    if engine != "local":
+        cfg.transcription.device = "cpu"  # type: ignore
+    else:
+        cfg.transcription.device = update.device if update.device in ("cpu", "cuda") else "cpu"  # type: ignore
     cfg.transcription.compute_type = update.compute_type
     cfg.transcription.beam_size = update.beam_size
     cfg.transcription.temperature = update.temperature
@@ -355,6 +409,10 @@ async def update_config(update: ConfigUpdate):
     cfg.transcription.suppress_blank = update.suppress_blank
     cfg.transcription.condition_on_previous_text = update.condition_on_previous_text
     cfg.transcription.vad_filter = update.vad_filter
+    cfg.transcription.vad_min_silence_ms = update.vad_min_silence_ms
+    cfg.transcription.vad_speech_pad_ms = update.vad_speech_pad_ms
+    cfg.transcription.vad_threshold = update.vad_threshold
+    cfg.transcription.hallucination_silence_threshold = update.hallucination_silence_threshold
     cfg.transcription.no_speech_threshold = update.no_speech_threshold
     cfg.transcription.log_prob_threshold = update.log_prob_threshold
     cfg.transcription.compression_ratio_threshold = update.compression_ratio_threshold
@@ -370,6 +428,7 @@ async def update_config(update: ConfigUpdate):
     cfg.bot.authorized_users = update.authorized_users
     cfg.bot.auth_required_summarize = update.auth_required_summarize
     cfg.bot.auth_required_reply = update.auth_required_reply
+    cfg.bot.auth_required_transcribe = update.auth_required_transcribe
     cfg.bot.prompts.summary = update.summary_prompt
     cfg.bot.prompts.reply = update.reply_prompt
     cfg.history.retention_days = update.retention_days
@@ -407,6 +466,10 @@ async def get_config_api():
         "suppress_blank": cfg.transcription.suppress_blank,
         "condition_on_previous_text": cfg.transcription.condition_on_previous_text,
         "vad_filter": cfg.transcription.vad_filter,
+        "vad_min_silence_ms": cfg.transcription.vad_min_silence_ms,
+        "vad_speech_pad_ms": cfg.transcription.vad_speech_pad_ms,
+        "vad_threshold": cfg.transcription.vad_threshold,
+        "hallucination_silence_threshold": cfg.transcription.hallucination_silence_threshold,
         "no_speech_threshold": cfg.transcription.no_speech_threshold,
         "log_prob_threshold": cfg.transcription.log_prob_threshold,
         "compression_ratio_threshold": cfg.transcription.compression_ratio_threshold,
@@ -422,6 +485,7 @@ async def get_config_api():
         "authorized_users": cfg.bot.authorized_users,
         "auth_required_summarize": cfg.bot.auth_required_summarize,
         "auth_required_reply": cfg.bot.auth_required_reply,
+        "auth_required_transcribe": cfg.bot.auth_required_transcribe,
         "summary_prompt": cfg.bot.prompts.summary,
         "reply_prompt": cfg.bot.prompts.reply,
         "retention_days": cfg.history.retention_days,
@@ -497,7 +561,11 @@ async def download_model(data: dict):
                     raise ImportError("faster-whisper is not installed. Run: pip install faster-whisper")
                 _downloads[model_id]["progress"] = 30
                 _downloads[model_id]["status_text"] = "Downloading model weights..."
-                model = WhisperModel(model_id, device="cpu", compute_type="int8")
+                download_root = str(Path(get_config().data_dir) / "models")
+                Path(download_root).mkdir(parents=True, exist_ok=True)
+                model = WhisperModel(
+                    model_id, device="cpu", compute_type="int8", download_root=download_root
+                )
                 _downloads[model_id]["progress"] = 90
                 del model
             elif engine == "moonshine":
@@ -523,7 +591,8 @@ async def download_model(data: dict):
                 import tarfile
 
                 cache_dir = Path(cfg.data_dir) / "models" / t.MODEL_NAME
-                if cache_dir.exists() and (cache_dir / "tokens.txt").exists():
+                encoder_ok = (cache_dir / "encoder.int8.onnx").exists() or (cache_dir / "encoder.onnx").exists()
+                if cache_dir.exists() and (cache_dir / "tokens.txt").exists() and encoder_ok:
                     _downloads[model_id]["progress"] = 100
                 else:
                     _downloads[model_id]["progress"] = 10
@@ -628,7 +697,7 @@ async def get_stats():
                 row = await cursor.fetchone()
                 stats["message_count"] = row[0] if row else 0
         except Exception:
-            pass
+            logger.warning("Stats: could not count messages in %s", db_path, exc_info=True)
     return stats
 
 
@@ -668,7 +737,7 @@ async def get_logs(offset: int = 0, limit: int = 100, level: str = "", search: s
     filtered = []
     for line in all_lines:
         stripped = line.rstrip("\n")
-        if level and level.upper() not in stripped:
+        if not line_matches_level(stripped, level):
             continue
         if search and search.lower() not in stripped.lower():
             continue

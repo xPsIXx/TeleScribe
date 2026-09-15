@@ -6,8 +6,9 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ASR_ENGINE=${ASR_ENGINE:-local}
-      - ASR_MODEL=${ASR_MODEL:-distil-medium.en}
+      - ASR_MODEL=${ASR_MODEL:-distil-large-v3}
       - ASR_DEVICE=${ASR_DEVICE:-cpu}
+      - DATA_DIR=/data
       - LLM_BASE_URL=${LLM_BASE_URL:-http://localhost:8088/v1}
       - LLM_MODEL=${LLM_MODEL:-qwen3.5-9b}
     volumes:

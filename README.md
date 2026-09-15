@@ -9,9 +9,9 @@ TeleScribe is a self-hosted Telegram bot that transcribes voice messages, stores
 - **3 Transcription Engines** — Select via the dashboard:
   - **Local** (faster-whisper) — CPU or GPU, private, no API costs
   - **Moonshine** — Edge-optimized ASR, ~100ms latency, ~60M params, CPU
-  - **Parakeet** — NVIDIA NeMo TDT, 6.3% WER, CPU
+  - **Parakeet** — NVIDIA Parakeet TDT 0.6B v2 (INT8, CPU)
 - **Public Transcription** — Replies publicly to the original voice message, visible to everyone in the group
-- **Authorization System** — Lock `/summarize`, `/reply`, and the "💬 Reply to this" button to specific users
+- **Authorization System** — Lock `/summarize`, `/reply`, and `/transcribe` to specific users
 - **Per-function Auth Toggles** — Independently control which features require authorization
 - **Group Message History** — All messages stored in SQLite for summarization
 - **Commands:**
@@ -59,7 +59,7 @@ docker compose logs -f
 |----------|----------|---------|-------------|
 | `TELEGRAM_BOT_TOKEN` | ✅ | — | Your bot token from @BotFather |
 | `ASR_ENGINE` | ❌ | `local` | `local`, `moonshine`, or `parakeet` |
-| `ASR_MODEL` | ❌ | `distil-medium.en` | Model name (for local engine) |
+| `ASR_MODEL` | ❌ | `distil-large-v3` | Model name (for local engine) |
 | `ASR_DEVICE` | ❌ | `cpu` | `cpu` or `cuda` (for local engine) |
 | `ASR_COMPUTE_TYPE` | ❌ | `int8` | `int8`, `float16`, `float32` (for local engine) |
 | `ASR_LANGUAGE` | ❌ | (auto) | Language code for transcription (e.g. `en`, `es`) |
@@ -152,7 +152,7 @@ $ docker logs telescribe
 2026-08-28 10:00:00 - telescribe.main - INFO - === TeleScribe v0.1.24 starting ===
 2026-08-28 10:00:00 - telescribe.main - INFO - Config:
 2026-08-28 10:00:00 - telescribe.main - INFO -   ASR engine:  local
-2026-08-28 10:00:00 - telescribe.main - INFO -   ASR model:   distil-medium.en
+2026-08-28 10:00:00 - telescribe.main - INFO -   ASR model:   distil-large-v3
 2026-08-28 10:00:00 - telescribe.main - INFO -   LLM endpoint: http://localhost:8088/v1
 2026-08-28 10:00:00 - telescribe.bot - INFO - Bot instance created
 2026-08-28 10:00:00 - telescribe.bot - INFO - Starting bot polling (Telegram API)...

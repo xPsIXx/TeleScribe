@@ -21,9 +21,7 @@ def cli() -> None:
 
     config = AppConfig.load()
 
-    # Add file logging for dashboard log viewer (truncate to clear previous session logs)
-    with open(f"{config.data_dir}/telescribe.log", "w") as f:
-        f.write("")
+    # Rotating file for the dashboard viewer — append, do not wipe previous errors.
     setup_logging(log_path=f"{config.data_dir}/telescribe.log")
 
     if not config.telegram_bot_token:
@@ -40,7 +38,8 @@ def cli() -> None:
     logger.info("  LLM endpoint: %s", config.llm.base_url)
     logger.info("  LLM model:   %s", config.llm.model)
     logger.info("  Privacy mode: %s", config.bot.privacy_mode)
-    logger.info("  Admin users:  %s", config.bot.admin_user_ids or "(none — all users authorized)")
+    logger.info("  Admin users:  %s", config.bot.admin_user_ids or "(none)")
+    logger.info("  Authorized:   %s", config.bot.authorized_users or "(none — commands locked)")
     logger.info("  Data dir:     %s", config.data_dir)
     logger.info("  Web dashboard: %s:%s", config.web.host, config.web.port)
 

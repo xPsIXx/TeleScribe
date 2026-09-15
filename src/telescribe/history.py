@@ -9,7 +9,7 @@ from typing import Optional
 
 import aiosqlite
 
-from telescribe.logger import get_logger
+from telescribe.logger import get_logger, log_failure
 
 logger = get_logger("history")
 
@@ -28,6 +28,7 @@ class MessageStore:
             logger.debug("Opening SQLite connection: %s", self.db_path)
             self._conn = await aiosqlite.connect(str(self.db_path))
             self._conn.row_factory = aiosqlite.Row
+            await self._conn.execute("PRAGMA journal_mode=WAL")
             await self._init_db()
         return self._conn
 
@@ -98,15 +99,36 @@ class MessageStore:
         has_transcription = bool(voice_transcription.strip())
         source = "voice_xcript" if has_transcription else "text" if has_text else "other"
 
-        await conn.execute(
-            """INSERT OR REPLACE INTO messages
-               (chat_id, message_id, user_id, username, first_name, text,
-                voice_transcription, file_id, reply_to_message_id, is_topic, topic_id, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (chat_id, message_id, user_id, username, first_name, text,
-             voice_transcription, file_id, reply_to_message_id, is_topic, topic_id, ts),
-        )
-        await conn.commit()
+        try:
+            await conn.execute(
+                """INSERT INTO messages
+                   (chat_id, message_id, user_id, username, first_name, text,
+                    voice_transcription, file_id, reply_to_message_id, is_topic, topic_id, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(chat_id, message_id) DO UPDATE SET
+                     username = excluded.username,
+                     first_name = excluded.first_name,
+                     text = CASE WHEN excluded.text != '' THEN excluded.text ELSE messages.text END,
+                     voice_transcription = CASE
+                       WHEN excluded.voice_transcription != '' THEN excluded.voice_transcription
+                       ELSE messages.voice_transcription
+                     END,
+                     file_id = CASE WHEN excluded.file_id != '' THEN excluded.file_id ELSE messages.file_id END,
+                     reply_to_message_id = COALESCE(excluded.reply_to_message_id, messages.reply_to_message_id),
+                     is_topic = excluded.is_topic,
+                     topic_id = COALESCE(excluded.topic_id, messages.topic_id),
+                     timestamp = excluded.timestamp
+                """,
+                (chat_id, message_id, user_id, username, first_name, text,
+                 voice_transcription, file_id, reply_to_message_id, is_topic, topic_id, ts),
+            )
+            await conn.commit()
+        except Exception as e:
+            log_failure(
+                logger, "history.store", e,
+                chat=chat_id, msg=message_id, user=user_id, source=source,
+            )
+            raise
         logger.debug("Stored %s msg: chat=%s, user=%s, msg=%s (%d chars)",
                       source, chat_id, user_id, message_id, len(text or voice_transcription))
 
