@@ -73,7 +73,9 @@ Empty or refused responses are logged as warnings; connection errors as `FAILURE
 
 ## Unraid
 
-1. Docker → Add Container → `ghcr.io/xpsixx/telescribe:latest` (or build from this repo).
+Images publish to GHCR on every `main` push and on `v*` tags: `ghcr.io/xpsixx/telescribe:latest`
+
+1. Docker → Add Container → `ghcr.io/xpsixx/telescribe:latest`
 2. Web UI: `http://[Unraid-IP]:8180`
 3. Volume: `/data` → `/mnt/user/appdata/telescribe/data/`
 4. Env: `TELEGRAM_BOT_TOKEN`, optional `LLM_API_KEY`, `LOG_LEVEL`.

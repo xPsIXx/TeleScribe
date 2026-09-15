@@ -3,6 +3,7 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
     TELESCRIBE_DATA_DIR=/data \
     TALKSCRIBE_CONFIG_PATH=/data/config.yaml \
     MOONSHINE_VOICE_CACHE=/data/models/moonshine \
@@ -14,20 +15,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Copy project
 COPY pyproject.toml ./
 COPY src/ ./src/
-COPY .gitignore ./
 
-# Install core + engine dependencies (fail the build if engines cannot install)
-RUN uv sync --no-dev --no-editable
-RUN uv pip install moonshine-voice sherpa-onnx
+# Core package (src layout) plus Moonshine + Parakeet extras
+RUN uv sync --no-dev --no-editable --extra moonshine --extra parakeet
 
 VOLUME ["/data"]
 EXPOSE 8180
 
-# Run both bot and web dashboard
 CMD ["uv", "run", "telescribe"]
