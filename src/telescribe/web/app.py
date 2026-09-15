@@ -19,10 +19,28 @@ from telescribe.logger import get_logger, get_log_file_path, log_failure, line_m
 
 logger = get_logger("web")
 
+def _templates_dir() -> Path:
+    """Resolve dashboard templates for both src-tree and installed wheel."""
+    candidates = [
+        Path(__file__).resolve().parent / "templates",
+    ]
+    try:
+        from importlib.resources import files
+
+        candidates.append(Path(str(files("telescribe.web").joinpath("templates"))))
+    except Exception:
+        pass
+    for path in candidates:
+        if (path / "dashboard.html").is_file():
+            return path
+    raise FileNotFoundError(
+        "dashboard.html missing. Looked in: " + ", ".join(str(p) for p in candidates)
+    )
+
+
 app = FastAPI(title="TeleScribe Dashboard")
 
-_web_dir = Path(__file__).parent
-templates = Jinja2Templates(directory=str(_web_dir / "templates"))
+templates = Jinja2Templates(directory=str(_templates_dir()))
 
 
 @app.exception_handler(Exception)
