@@ -67,6 +67,26 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             logger.warning("Could not send error reply: %s", e)
 
 
+def _parse_age_days(args: list[str] | None, default: float = 1.0) -> float:
+    """Parse 2d / 12h / 30m from command args. Ignores a leading 'all' token."""
+    if not args:
+        return default
+    tokens = [a for a in args if a and a.lower() != "all"]
+    if not tokens:
+        return default
+    arg = tokens[0]
+    try:
+        if arg.endswith("d"):
+            return float(arg[:-1])
+        if arg.endswith("h"):
+            return float(arg[:-1]) / 24.0
+        if arg.endswith("m"):
+            return float(arg[:-1]) / 1440.0
+        return float(arg)
+    except (ValueError, TypeError):
+        return default
+
+
 def format_messages_for_summary(messages: list[dict]) -> str:
     """Format messages into a readable block for the LLM summary prompt."""
     lines = []
@@ -216,23 +236,38 @@ class TalkscribeBot:
         safe_text = self._escape_markdown(text) if text.startswith("❌") or text.startswith("⚠️") else text
 
         for chunk in _chunk_text(safe_text):
+            sent = False
+            if self.config.bot.privacy_mode and update.effective_chat.type in (
+                constants.ChatType.GROUP, constants.ChatType.SUPERGROUP
+            ):
+                for parse_mode in (ParseMode.MARKDOWN, None):
+                    try:
+                        kwargs = {
+                            "chat_id": update.effective_chat.id,
+                            "text": chunk,
+                            "api_kwargs": {
+                                "ephemeral_message_parameters": {
+                                    "receiver_user_id": update.effective_user.id
+                                }
+                            },
+                        }
+                        if parse_mode:
+                            kwargs["parse_mode"] = parse_mode
+                        if reply_markup:
+                            kwargs["reply_markup"] = reply_markup
+                        await context.bot.send_message(**kwargs)
+                        sent = True
+                        break
+                    except Exception as e:
+                        logger.warning("Ephemeral send failed parse_mode=%s: %s", parse_mode, e)
+            if sent:
+                continue
             try:
-                if self.config.bot.privacy_mode and update.effective_chat.type in (
-                    constants.ChatType.GROUP, constants.ChatType.SUPERGROUP
-                ):
-                    await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=chunk,
-                        api_kwargs={"ephemeral_message_parameters": {"receiver_user_id": update.effective_user.id}},
-                        parse_mode=ParseMode.MARKDOWN,
-                        reply_markup=reply_markup,
-                    )
-                else:
-                    await update.message.reply_text(
-                        text=chunk,
-                        parse_mode=ParseMode.MARKDOWN,
-                        reply_markup=reply_markup,
-                    )
+                await update.message.reply_text(
+                    text=chunk,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=reply_markup,
+                )
             except Exception as e:
                 logger.warning("Private send failed parse_mode=markdown: %s — retrying plain text", e)
                 try:
@@ -275,11 +310,12 @@ class TalkscribeBot:
         user = update.effective_user
         logger.info("Command /start from user %s (%s)", user.id, user.first_name)
         await self._send_private(update, context,
-            "👋 *Welcome to TeleScribe!*\\n\\n"
-            "I can transcribe voice messages and help summarize conversations.\\n\\n"
-            "*/summarize* — Summarize all unsummarized transcriptions from others\\n"
-            "*/reply* — Generate replies to all unreplied transcriptions from others\\n"
-            "*/transcribe* — Transcribe past voice messages (backlog)\\n"
+            "👋 *Welcome to TeleScribe!*\n\n"
+            "I transcribe voice messages and can summarize or draft replies.\n\n"
+            "*/summarize* — Unsummarized transcriptions from others in this chat\n"
+            "*/summarize_all* — Last day per person, all chats (`/summarize all 2d`)\n"
+            "*/reply* — Draft replies to unreplied transcriptions from others\n"
+            "*/transcribe* — Retry voice notes that never transcribed\n"
             "*/help* — Show this message"
         )
 
@@ -564,7 +600,7 @@ class TalkscribeBot:
             msg_count = len(transcriptions)
 
             if not summary:
-                logger.warning("Summary returned empty — LLM response had no content (choices=%d)", len(response.choices))
+                logger.warning("Summary returned empty — LLM response had no content")
                 await self._send_private(update, context, "⚠️ LLM returned an empty summary. Try again or check the LLM endpoint.")
                 return
 
@@ -598,21 +634,9 @@ class TalkscribeBot:
             await self._send_private(update, context, "❌ You are not authorized to use this command.")
             return
 
-        # Parse time window from args (default 1 day)
-        max_age_days = 1
-        if context.args and context.args[0].lower() != "all":
-            try:
-                arg = context.args[0]
-                if arg.endswith("d"):
-                    max_age_days = int(arg[:-1])
-                elif arg.endswith("h"):
-                    max_age_days = int(arg[:-1]) / 24.0
-                elif arg.endswith("m"):
-                    max_age_days = int(arg[:-1]) / 1440.0
-                else:
-                    max_age_days = int(arg)
-            except (ValueError, TypeError):
-                pass
+        # Parse time window from args (default 1 day).
+        # /summarize all 2d leaves args as ["all", "2d"] — skip the "all" token.
+        max_age_days = _parse_age_days(context.args, default=1.0)
 
         logger.info("Command /summarize_all from user %s (max_age=%s days)", user.id, max_age_days)
         await self._send_private(update, context, f"📊 Looking for unsummarized transcriptions across all chats (last {max_age_days}d)...")
@@ -626,7 +650,7 @@ class TalkscribeBot:
 
             if not transcriptions:
                 logger.info("No unsummarized transcriptions found across any chat")
-                await self._send_private(update, context, "✅ No unsummarized transcriptions found in the last day.")
+                await self._send_private(update, context, f"✅ No unsummarized transcriptions found in the last {max_age_days}d.")
                 return
 
             # Group by user_id
@@ -727,7 +751,7 @@ class TalkscribeBot:
             msg_count = len(transcriptions)
 
             if not reply:
-                logger.warning("Reply returned empty — LLM response had no content (choices=%d)", len(response.choices))
+                logger.warning("Reply returned empty — LLM response had no content")
                 await self._send_private(update, context, "⚠️ LLM returned an empty reply. Try again or check the LLM endpoint.")
                 return
 

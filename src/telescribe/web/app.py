@@ -116,6 +116,22 @@ def get_config() -> AppConfig:
     return _config
 
 
+def _moonshine_lang_dirs(cache: Path, lang: str) -> list[Path]:
+    """Language-specific Moonshine dirs (medium-streaming-en, not *en* which matches encoder)."""
+    if not cache.exists() or not lang:
+        return []
+    needle = f"medium-streaming-{lang}"
+    return [p for p in cache.rglob(needle) if p.is_dir()]
+
+
+def _moonshine_encoder_ok(cache: Path, lang: str) -> bool:
+    for d in _moonshine_lang_dirs(cache, lang):
+        for p in d.rglob("encoder*.ort"):
+            if p.stat().st_size > 500_000:
+                return True
+    return False
+
+
 def _check_model_downloaded(engine: str, model: str) -> bool:
     """Check if a model file exists on disk."""
     data_dir = get_config().data_dir
@@ -146,31 +162,15 @@ def _check_model_downloaded(engine: str, model: str) -> bool:
         return False
 
     if engine == "moonshine":
-        # Check /data/models/ first, then home cache
-        # Moonshine stores models per-language, e.g. medium-streaming-en, medium-streaming-es
-        # Check for language-specific model directory
         cache = Path(data_dir) / "models" / "moonshine"
-        if cache.exists():
-            for p in cache.rglob(f"*{model}*/encoder*.ort"):
-                if p.stat().st_size > 500_000:
-                    return True
-        cache = Path(os.environ.get("MOONSHINE_VOICE_CACHE", ""))
-        if not cache.exists():
-            cache = home / ".cache" / "moonshine_voice"
-        if not cache.exists():
-            cache = home / ".cache" / "moonshine"
-        if cache.exists():
-            # Check for language-specific model directory, e.g. .../medium-streaming-en/.../encoder.ort
-            for p in cache.rglob(f"*{model}*/encoder*.ort"):
-                if p.stat().st_size > 500_000:
-                    return True
-            # Also check if model name is in the directory path
-            for p in cache.rglob(f"*{model}*"):
-                if p.is_dir() and any(p.rglob("encoder*.ort")):
-                    for f in p.rglob("encoder*.ort"):
-                        if f.stat().st_size > 500_000:
-                            return True
-        return False
+        if _moonshine_encoder_ok(cache, model):
+            return True
+        extra = Path(os.environ.get("MOONSHINE_VOICE_CACHE", ""))
+        if not extra.exists():
+            extra = home / ".cache" / "moonshine_voice"
+        if not extra.exists():
+            extra = home / ".cache" / "moonshine"
+        return _moonshine_encoder_ok(extra, model)
 
     if engine == "parakeet":
         model_dir = Path(data_dir) / "models" / model
@@ -208,19 +208,14 @@ def _get_model_paths(engine: str, model: str) -> list[Path]:
                     if candidate.is_dir():
                         paths.append(candidate)
     elif engine == "moonshine":
-        # Delete only the selected language's files, not the whole cache.
         cache = Path(data_dir) / "models" / "moonshine"
-        if cache.exists():
-            for p in cache.rglob(f"*{model}*"):
-                paths.append(p)
+        paths.extend(_moonshine_lang_dirs(cache, model))
         extra = Path(os.environ.get("MOONSHINE_VOICE_CACHE", ""))
         if not extra.exists():
             extra = home / ".cache" / "moonshine_voice"
         if not extra.exists():
             extra = home / ".cache" / "moonshine"
-        if extra.exists():
-            for p in extra.rglob(f"*{model}*"):
-                paths.append(p)
+        paths.extend(_moonshine_lang_dirs(extra, model))
     elif engine == "parakeet":
         model_dir = Path(data_dir) / "models" / model
         if model_dir.exists():
@@ -271,22 +266,15 @@ def _check_model_valid(engine: str, model: str) -> bool:
         return False
 
     if engine == "moonshine":
-        # Check /data/models/moonshine/ first, then home cache
         cache = Path(data_dir) / "models" / "moonshine"
-        if cache.exists():
-            for p in cache.rglob("*.ort"):
-                if p.stat().st_size > 500_000:
-                    return True
-        cache = Path(os.environ.get("MOONSHINE_VOICE_CACHE", ""))
-        if not cache.exists():
-            cache = home / ".cache" / "moonshine_voice"
-        if not cache.exists():
-            cache = home / ".cache" / "moonshine"
-        if cache.exists():
-            for p in cache.rglob("*.ort"):
-                if p.stat().st_size > 500_000:
-                    return True
-        return False
+        if _moonshine_encoder_ok(cache, model):
+            return True
+        extra = Path(os.environ.get("MOONSHINE_VOICE_CACHE", ""))
+        if not extra.exists():
+            extra = home / ".cache" / "moonshine_voice"
+        if not extra.exists():
+            extra = home / ".cache" / "moonshine"
+        return _moonshine_encoder_ok(extra, model)
 
     if engine == "parakeet":
         model_dir = Path(data_dir) / "models" / model
@@ -609,7 +597,7 @@ async def download_model(data: dict):
                 else:
                     _downloads[model_id]["progress"] = 10
                     cache_dir.mkdir(parents=True, exist_ok=True)
-                    archive = cache_dir.with_suffix(".tar.bz2")
+                    archive = cache_dir.parent / f"{t.MODEL_NAME}.tar.bz2"
                     url = f"{t.MODEL_URL}/{t.MODEL_NAME}.tar.bz2"
 
                     _downloads[model_id]["status_text"] = f"Downloading {t.MODEL_NAME}..."

@@ -383,7 +383,8 @@ class ParakeetTranscriber(BaseTranscriber):
 
         logger.info("Downloading Parakeet TDT 0.6B v2 to %s...", cache_dir)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        archive = cache_dir.with_suffix(".tar.bz2")
+        # Path.with_suffix would turn "...0.6b-v2-int8" into "...0.tar.bz2"
+        archive = cache_dir.parent / f"{self.MODEL_NAME}.tar.bz2"
 
         url = f"{self.MODEL_URL}/{self.MODEL_NAME}.tar.bz2"
         try:

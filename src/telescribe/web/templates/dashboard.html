@@ -839,6 +839,15 @@
         }
 
         // ====== Save Config ======
+        function optionalFloat(id) {
+            const el = document.getElementById(id);
+            if (!el) return null;
+            const v = (el.value || '').trim();
+            if (!v) return null;
+            const n = parseFloat(v);
+            return Number.isNaN(n) ? null : n;
+        }
+
         async function saveConfig() {
             const btn = document.getElementById('saveBtn');
             btn.disabled = true; btn.textContent = '⏳ Saving...';
@@ -870,9 +879,9 @@
                 vad_speech_pad_ms: parseInt(document.getElementById('vadSpeechPad')?.value) || 400,
                 vad_threshold: parseFloat(document.getElementById('vadThreshold')?.value) || 0.45,
                 hallucination_silence_threshold: parseFloat(document.getElementById('hallucinationSilence')?.value) || 2.0,
-                no_speech_threshold: parseFloat(document.getElementById('noSpeechThreshold').value) || null,
-                log_prob_threshold: parseFloat(document.getElementById('logProbThreshold').value) || null,
-                compression_ratio_threshold: parseFloat(document.getElementById('compressionRatioThreshold').value) || null,
+                no_speech_threshold: optionalFloat('noSpeechThreshold'),
+                log_prob_threshold: optionalFloat('logProbThreshold'),
+                compression_ratio_threshold: optionalFloat('compressionRatioThreshold'),
                 initial_prompt: document.getElementById('initialPrompt').value,
                 authorized_users: document.getElementById('authorizedUsers').value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
                 auth_required_summarize: document.getElementById('authSummarize').checked,
