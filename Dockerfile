@@ -27,6 +27,28 @@ COPY src/ ./src/
 # Do not use `uv run` at container start — it re-syncs without extras and
 # silently uninstalls sherpa-onnx / moonshine-voice.
 RUN uv sync --no-dev --no-editable
+
+# sherpa-onnx 1.13 wheels link libonnxruntime.so but do not bundle it.
+# Point $ORIGIN (sherpa_onnx/lib) at the .so from the onnxruntime wheel.
+RUN python - <<'PY'
+from pathlib import Path
+import onnxruntime
+
+capi = Path(onnxruntime.__file__).resolve().parent / "capi"
+libs = sorted(capi.glob("libonnxruntime.so*"))
+print("onnxruntime capi libs:", [str(p) for p in libs])
+if not libs:
+    raise SystemExit("onnxruntime wheel has no libonnxruntime.so*")
+src = next((p for p in libs if p.name == "libonnxruntime.so"), libs[0])
+dest_dir = Path("/app/.venv/lib/python3.12/site-packages/sherpa_onnx/lib")
+dest_dir.mkdir(parents=True, exist_ok=True)
+dest = dest_dir / "libonnxruntime.so"
+if dest.exists() or dest.is_symlink():
+    dest.unlink()
+dest.symlink_to(src)
+print("linked", dest, "->", src)
+PY
+
 # Fail the image if the dashboard or ASR engines did not actually install.
 RUN python -c "\
 from pathlib import Path; \
