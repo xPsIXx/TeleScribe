@@ -575,10 +575,15 @@ async def download_model(data: dict):
                 try:
                     from moonshine_voice import get_model_for_language
                 except ImportError:
-                    raise ImportError("moonshine-voice is not installed. Run: pip install moonshine-voice")
+                    raise ImportError(
+                        "moonshine-voice is missing from this container. "
+                        "Pull ghcr.io/xpsixx/telescribe:latest (v0.3.5+)."
+                    )
+                logger.info("Moonshine download starting language=%s", model_id)
                 _downloads[model_id]["progress"] = 30
                 _downloads[model_id]["status_text"] = "Downloading Moonshine model via CDN..."
                 model_path, model_arch = get_model_for_language(model_id)
+                logger.info("Moonshine download finished language=%s path=%s arch=%s", model_id, model_path, model_arch)
                 _downloads[model_id]["progress"] = 90
             elif engine == "parakeet":
                 from telescribe.transcriber import ParakeetTranscriber

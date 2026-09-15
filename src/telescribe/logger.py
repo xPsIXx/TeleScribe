@@ -88,12 +88,29 @@ def setup_logging(log_path: str | None = None) -> logging.Logger:
     sys.excepthook = _excepthook
     threading.excepthook = _thread_excepthook
 
-    # Third-party noise down, their errors still reach us.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
-    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("telegram.ext.ExtBot").setLevel(logging.WARNING)
+    # Keep LOG_LEVEL=DEBUG for TeleScribe itself. HuggingFace/filelock
+    # otherwise floods the dashboard with lock acquire/release lines.
+    for name in (
+        "filelock",
+        "fsspec",
+        "huggingface_hub",
+        "huggingface_hub.file_download",
+        "urllib3",
+        "httpx",
+        "httpcore",
+        "aiosqlite",
+        "openai",
+        "onnxruntime",
+        "numba",
+        "charset_normalizer",
+        "telegram",
+        "telegram.ext",
+        "telegram.ext.ExtBot",
+        "uvicorn",
+        "uvicorn.access",
+        "uvicorn.error",
+    ):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     logging.getLogger("telescribe").info("Log level set to %s", level_name)
     return logging.getLogger("telescribe")
