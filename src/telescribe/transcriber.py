@@ -178,6 +178,7 @@ class FasterWhisperTranscriber(BaseTranscriber):
                 }
 
             h_thresh = cfg.hallucination_silence_threshold or None
+            hotwords = _normalize_hotwords(cfg.hotwords)
             kwargs = dict(
                 beam_size=cfg.beam_size,
                 best_of=cfg.best_of,
@@ -193,13 +194,24 @@ class FasterWhisperTranscriber(BaseTranscriber):
                 no_speech_threshold=cfg.no_speech_threshold,
                 log_prob_threshold=cfg.log_prob_threshold,
                 compression_ratio_threshold=cfg.compression_ratio_threshold,
-                initial_prompt=cfg.initial_prompt,
+                initial_prompt=cfg.initial_prompt or None,
                 language=cfg.language,
                 hallucination_silence_threshold=h_thresh,
                 word_timestamps=bool(h_thresh),
             )
+            if hotwords:
+                kwargs["hotwords"] = hotwords
+                logger.info("Whisper hotwords: %s", hotwords[:240])
 
-            segments, info = model.transcribe(tmp_path, **kwargs)
+            try:
+                segments, info = model.transcribe(tmp_path, **kwargs)
+            except TypeError as e:
+                if "hotwords" in kwargs:
+                    logger.warning("faster-whisper rejected hotwords (%s) — retrying without", e)
+                    kwargs.pop("hotwords", None)
+                    segments, info = model.transcribe(tmp_path, **kwargs)
+                else:
+                    raise
 
             text_parts = []
             last_end = 0.0
@@ -587,6 +599,13 @@ class GroqTranscriber(OpenAITranscriber):
 
 
 # ---- Helpers ----
+
+def _normalize_hotwords(raw: str | None) -> str | None:
+    """Comma/space list -> space-separated string for faster-whisper."""
+    if not raw:
+        return None
+    parts = [p.strip() for p in str(raw).replace(",", " ").split() if p.strip()]
+    return " ".join(parts) or None
 
 _MIME_EXT_MAP = {
     "audio/ogg": ".ogg",

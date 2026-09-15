@@ -368,6 +368,7 @@ class ConfigUpdate(BaseModel):
     log_prob_threshold: float | None = None
     compression_ratio_threshold: float | None = None
     initial_prompt: str = ""
+    hotwords: str = ""
     language: str
     moonshine_vad: bool = False
     moonshine_vad_threshold: float = 0.35
@@ -426,6 +427,7 @@ async def update_config(update: ConfigUpdate):
     cfg.transcription.log_prob_threshold = update.log_prob_threshold
     cfg.transcription.compression_ratio_threshold = update.compression_ratio_threshold
     cfg.transcription.initial_prompt = update.initial_prompt or None
+    cfg.transcription.hotwords = update.hotwords or None
     cfg.transcription.language = update.language or None
     cfg.transcription.moonshine_vad = update.moonshine_vad
     cfg.transcription.moonshine_vad_threshold = update.moonshine_vad_threshold
@@ -489,6 +491,7 @@ async def get_config_api():
         "log_prob_threshold": cfg.transcription.log_prob_threshold,
         "compression_ratio_threshold": cfg.transcription.compression_ratio_threshold,
         "initial_prompt": cfg.transcription.initial_prompt or "",
+        "hotwords": cfg.transcription.hotwords or "",
         "language": cfg.transcription.language or "",
         "moonshine_vad": cfg.transcription.moonshine_vad,
         "moonshine_vad_threshold": cfg.transcription.moonshine_vad_threshold,

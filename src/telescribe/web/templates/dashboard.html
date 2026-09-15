@@ -210,11 +210,18 @@
                         <input id="language" class="input-field" value="{{ config.transcription.language or '' }}" placeholder="en, es, ar, fr, de...">
                     </div>
 
-                    <!-- Initial Prompt (visible for local engine only) -->
-                    <div id="initialPromptGroup" class="hidden">
-                        <label>Initial Prompt <span class="text-xs text-muted">— bias transcription toward specific words/phrases</span></label>
-                        <textarea id="initialPrompt" class="input-field" rows="2" placeholder="e.g. model names, jargon, proper nouns..." style="resize: vertical;">{{ config.transcription.initial_prompt or '' }}</textarea>
-                        <span class="text-xs text-muted">Helps fix recurring transcription mistakes. Leave empty to disable.</span>
+                    <!-- Word bias (Whisper only) -->
+                    <div id="initialPromptGroup" class="hidden space-y-3">
+                        <div>
+                            <label>Word hints (hotwords)</label>
+                            <textarea id="hotwords" class="input-field" rows="2" placeholder="Kyle, TeleScribe, Unraid, Qwen" style="resize: vertical;">{{ config.transcription.hotwords or '' }}</textarea>
+                            <span class="text-xs text-muted">Names, jargon, spellings Whisper keeps getting wrong. Applied to every 30s window. Comma or space separated. Whisper only — Moonshine/Parakeet ignore this.</span>
+                        </div>
+                        <div>
+                            <label>Context prompt <span class="text-xs text-muted">— optional, first window only</span></label>
+                            <textarea id="initialPrompt" class="input-field" rows="2" placeholder="e.g. A voice note about home lab and Telegram bots." style="resize: vertical;">{{ config.transcription.initial_prompt or '' }}</textarea>
+                            <span class="text-xs text-muted">A short sentence Whisper pretends it already heard. Use hotwords for names; use this for topic/style.</span>
+                        </div>
                     </div>
 
                     <!-- Advanced Decoding Settings (only for local engine) -->
@@ -913,6 +920,7 @@
                 log_prob_threshold: optionalFloat('logProbThreshold'),
                 compression_ratio_threshold: optionalFloat('compressionRatioThreshold'),
                 initial_prompt: document.getElementById('initialPrompt').value,
+                hotwords: document.getElementById('hotwords')?.value || '',
                 authorized_users: document.getElementById('authorizedUsers').value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)),
                 auth_required_summarize: document.getElementById('authSummarize').checked,
                 auth_required_reply: document.getElementById('authReply').checked,

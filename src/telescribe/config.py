@@ -67,6 +67,7 @@ class TranscriptionConfig(BaseSettings):
     log_prob_threshold: Optional[float] = None
     compression_ratio_threshold: Optional[float] = None
     initial_prompt: Optional[str] = None
+    hotwords: Optional[str] = None
     language: Optional[str] = None
     # Moonshine's own Silero VAD (separate from Whisper vad_filter).
     # Off by default so pauses are not treated as end-of-utterance.
@@ -284,6 +285,7 @@ class AppConfig(BaseSettings):
                 "log_prob_threshold": self.transcription.log_prob_threshold,
                 "compression_ratio_threshold": self.transcription.compression_ratio_threshold,
                 "initial_prompt": self.transcription.initial_prompt,
+                "hotwords": self.transcription.hotwords,
                 "language": self.transcription.language,
                 "moonshine_vad": self.transcription.moonshine_vad,
                 "moonshine_vad_threshold": self.transcription.moonshine_vad_threshold,
